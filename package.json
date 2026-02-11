@@ -1,0 +1,71 @@
+{
+    "name": "@ilhanaydinli/dbcli",
+    "version": "1.0.0",
+    "description": "A powerful, interactive CLI tool for managing database connections, imports, exports, and operations.",
+    "module": "src/index.ts",
+    "type": "module",
+    "bin": {
+        "dbcli": "./dist/index.js"
+    },
+    "files": [
+        "dist"
+    ],
+    "keywords": [
+        "cli",
+        "database",
+        "postgresql",
+        "bun",
+        "import",
+        "export",
+        "backup"
+    ],
+    "license": "MIT",
+    "author": "İlhan Aydınlı",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ilhanaydinli/dbcli.git"
+    },
+    "engines": {
+        "bun": ">=1.0.0"
+    },
+    "scripts": {
+        "start": "bun run src/index.ts",
+        "dev": "bun run --watch src/index.ts",
+        "build": "bun build src/index.ts --outdir ./dist --target bun",
+        "check": "bun run check:types && bun run check:lint && bun run check:format && bun run knip",
+        "check:types": "bunx --bun tsc --noEmit",
+        "check:lint": "bunx --bun eslint src tests",
+        "check:format": "bunx --bun prettier --check '{src,tests}/**/*.{js,ts,json}'",
+        "fix": "bun run fix:lint && bun run fix:format",
+        "fix:lint": "bunx --bun eslint src tests --fix",
+        "fix:format": "bunx --bun prettier --write '{src,tests}/**/*.{js,ts,json}'",
+        "test": "bun test",
+        "knip": "knip-bun",
+        "ruler": "ruler apply",
+        "prepublishOnly": "bun run build"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "@intellectronica/ruler": "^0.3.34",
+        "@types/bun": "latest",
+        "@types/update-notifier": "^6.0.8",
+        "eslint": "^10.0.0",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-prettier": "^5.5.5",
+        "eslint-plugin-simple-import-sort": "^12.1.1",
+        "globals": "^17.3.0",
+        "knip": "^5.83.1",
+        "prettier": "^3.8.1",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.55.0"
+    },
+    "dependencies": {
+        "@clack/prompts": "^1.0.0",
+        "update-notifier": "^7.3.1",
+        "zod": "^4.3.6"
+    },
+    "publishConfig": {
+        "registry": "https://registry.npmjs.org/",
+        "access": "public"
+    }
+}

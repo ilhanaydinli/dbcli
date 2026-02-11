@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+bun.lock
+package-lock.json
+yarn.lock
+
+# Build & Coverage
+dist/
+out/
+coverage/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Config & Secrets
+credentials/
+.env
+.env.*
+!.env.example
+
+# System
+.DS_Store

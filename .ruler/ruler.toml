@@ -1,0 +1,19 @@
+default_agents = ["copilot", "claude", "cursor", "codex", "antigravity"]
+
+[gitignore]
+enabled = true
+
+[agents.copilot]
+enabled = true
+
+[agents.claude]
+enabled = true
+
+[agents.cursor]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.antigravity]
+enabled = true
