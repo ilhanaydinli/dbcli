@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import updateNotifier from 'update-notifier'
 
 import { App } from '@/cli/app'
