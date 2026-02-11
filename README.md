@@ -3,7 +3,7 @@
 A powerful, interactive CLI tool for managing database connections, imports, exports, and operations.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![npm version](https://img.shields.io/npm/v/dbcli.svg)](https://www.npmjs.com/package/dbcli)
+[![npm version](https://img.shields.io/npm/v/@ilhanaydinli/dbcli.svg)](https://www.npmjs.com/package/@ilhanaydinli/dbcli)
 
 ---
 
@@ -30,32 +30,9 @@ A powerful, interactive CLI tool for managing database connections, imports, exp
 
 ### Install globally
 
-<details>
-<summary><b>bun</b></summary>
-
 ```bash
-bun install -g dbcli
+bun install -g @ilhanaydinli/dbcli
 ```
-
-</details>
-
-<details>
-<summary><b>npm</b></summary>
-
-```bash
-npm install -g dbcli
-```
-
-</details>
-
-<details>
-<summary><b>yarn</b></summary>
-
-```bash
-yarn global add dbcli
-```
-
-</details>
 
 ---
 
