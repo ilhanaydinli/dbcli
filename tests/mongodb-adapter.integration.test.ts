@@ -3,43 +3,45 @@ import { existsSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-import { PostgresAdapter } from '@/adapters/postgres-adapter'
-import { AdapterError } from '@/errors'
+import { MongoDbAdapter } from '@/adapters/mongodb-adapter'
 import type { DbConfig } from '@/interfaces'
 import { DbType } from '@/interfaces'
 
-const TEST_DB_PREFIX = 'db_cli_test_'
+const TEST_DB_PREFIX = 'db_cli_mongo_test_'
 const testDbName = `${TEST_DB_PREFIX}${Date.now()}`
+const seedDbName = `${TEST_DB_PREFIX}seed_${Date.now()}`
 const cloneDbName = `${testDbName}_clone`
 const renameDbName = `${testDbName}_renamed`
 const importDbName = `${testDbName}_import`
 
 const testConfig: DbConfig = {
-    id: 'test-connection',
-    name: 'Test PostgreSQL',
-    type: DbType.Postgres,
-    host: process.env.POSTGRES_HOST!,
-    port: parseInt(process.env.POSTGRES_PORT!),
-    user: process.env.POSTGRES_USER!,
-    password: process.env.POSTGRES_PASSWORD!,
-    database: process.env.POSTGRES_DB!,
+    id: 'test-mongo-connection',
+    name: 'Test MongoDB',
+    type: DbType.MongoDB,
+    host: process.env.MONGO_HOST ?? 'localhost',
+    port: parseInt(process.env.MONGO_PORT ?? '27017'),
+    user: process.env.MONGO_USER ?? '',
+    password: process.env.MONGO_PASSWORD ?? '',
+    database: process.env.MONGO_DB ?? 'admin',
     ssl: false,
     verbose: false,
+    uri: process.env.MONGO_URI,
 }
 
-describe('PostgresAdapter Integration Tests', () => {
-    let adapter: PostgresAdapter
+describe('MongoDbAdapter Integration Tests', () => {
+    let adapter: MongoDbAdapter
     const createdDatabases: string[] = []
 
-    beforeAll(() => {
-        adapter = new PostgresAdapter(testConfig)
+    beforeAll(async () => {
+        adapter = new MongoDbAdapter(testConfig)
+        await adapter.createDatabase(seedDbName)
+        createdDatabases.push(seedDbName)
     })
 
     afterAll(async () => {
         for (const db of createdDatabases) {
             try {
-                const cleanupAdapter = new PostgresAdapter({ ...testConfig, database: 'postgres' })
-                await cleanupAdapter.dropDatabase(db)
+                await adapter.dropDatabase(db)
             } catch {
                 // Ignore cleanup errors
             }
@@ -47,7 +49,7 @@ describe('PostgresAdapter Integration Tests', () => {
     })
 
     describe('checkDependencies', () => {
-        it('should not throw when psql and pg_dump are installed', () => {
+        it('should not throw when mongosh and mongodump are installed', () => {
             expect(() => adapter.checkDependencies()).not.toThrow()
         })
     })
@@ -59,12 +61,21 @@ describe('PostgresAdapter Integration Tests', () => {
         })
 
         it('should return false for invalid connection', async () => {
-            const badAdapter = new PostgresAdapter({
+            const badAdapter = new MongoDbAdapter({
                 ...testConfig,
                 host: 'invalid-host-that-does-not-exist',
+                uri: undefined,
             })
             const result = await badAdapter.testConnection()
             expect(result).toBe(false)
+        })
+    })
+
+    describe('getLocales', () => {
+        it('should return empty locales for MongoDB', async () => {
+            const result = await adapter.getLocales()
+            expect(result.locales).toEqual([])
+            expect(result.default).toBe('')
         })
     })
 
@@ -72,10 +83,16 @@ describe('PostgresAdapter Integration Tests', () => {
         it('should return an array of database info with names and sizes', async () => {
             const databases = await adapter.listDatabases()
             expect(Array.isArray(databases)).toBe(true)
-            expect(databases.length).toBeGreaterThan(0)
-            expect(databases.some((db) => db.name === 'postgres')).toBe(true)
             expect(databases[0]).toHaveProperty('name')
             expect(databases[0]).toHaveProperty('size')
+        })
+
+        it('should not include system databases', async () => {
+            const databases = await adapter.listDatabases()
+            const names = databases.map((db) => db.name)
+            expect(names).not.toContain('admin')
+            expect(names).not.toContain('local')
+            expect(names).not.toContain('config')
         })
     })
 
@@ -88,12 +105,8 @@ describe('PostgresAdapter Integration Tests', () => {
             expect(databases.some((db) => db.name === testDbName)).toBe(true)
         })
 
-        it('should throw AdapterError for invalid database name', async () => {
-            await expect(adapter.createDatabase('invalid-name!')).rejects.toThrow()
-        })
-
-        it('should throw when creating duplicate database', async () => {
-            await expect(adapter.createDatabase(testDbName)).rejects.toThrow(AdapterError)
+        it('should throw for invalid database name', async () => {
+            await expect(adapter.createDatabase('invalid name!')).rejects.toThrow()
         })
     })
 
@@ -121,29 +134,29 @@ describe('PostgresAdapter Integration Tests', () => {
     })
 
     describe('export and import', () => {
-        const exportFile = join(tmpdir(), `db_cli_test_export_${Date.now()}.sql`)
+        const exportFile = join(tmpdir(), `db_cli_mongo_export_${Date.now()}.archive`)
 
         afterAll(() => {
             if (existsSync(exportFile)) unlinkSync(exportFile)
         })
 
-        it('should export database to file', async () => {
-            const exportAdapter = new PostgresAdapter({ ...testConfig, database: testDbName })
+        it('should export database to archive file', async () => {
+            const exportAdapter = new MongoDbAdapter({ ...testConfig, database: testDbName })
             await exportAdapter.export(exportFile)
 
             expect(existsSync(exportFile)).toBe(true)
         })
 
-        it('should import SQL file into database', async () => {
+        it('should import archive file into database', async () => {
             await adapter.createDatabase(importDbName)
             createdDatabases.push(importDbName)
 
-            const importAdapter = new PostgresAdapter({ ...testConfig, database: importDbName })
+            const importAdapter = new MongoDbAdapter({ ...testConfig, database: importDbName })
             await importAdapter.import(exportFile)
         })
 
         it('should import with reset option', async () => {
-            const importAdapter = new PostgresAdapter({ ...testConfig, database: importDbName })
+            const importAdapter = new MongoDbAdapter({ ...testConfig, database: importDbName })
             await importAdapter.import(exportFile, { reset: true })
         })
     })
@@ -165,6 +178,10 @@ describe('PostgresAdapter Integration Tests', () => {
 
             const databases = await adapter.listDatabases()
             expect(databases.some((db) => db.name === testDbName)).toBe(false)
+        })
+
+        it('should throw for invalid database name', async () => {
+            await expect(adapter.dropDatabase('invalid name!')).rejects.toThrow()
         })
     })
 })

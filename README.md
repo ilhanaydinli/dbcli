@@ -26,7 +26,7 @@ A powerful, interactive CLI tool for managing database connections, imports, exp
 - Database client tools for your target database:
     - **PostgreSQL:** `psql`, `pg_dump`
     - **MySQL/MariaDB:** `mysql`, `mysqldump` _(coming soon)_
-    - **MongoDB:** `mongosh`, `mongodump` _(coming soon)_
+    - **MongoDB:** `mongosh`, `mongodump`, `mongorestore`
 
 ### Install globally
 
@@ -101,9 +101,9 @@ Manage databases on a selected connection:
 | Database      | Status       | Import | Export | Manage |
 | ------------- | ------------ | ------ | ------ | ------ |
 | PostgreSQL    | ✅ Supported | ✅     | ✅     | ✅     |
+| MongoDB       | ✅ Supported | ✅     | ✅     | ✅     |
 | MySQL         | ⬜ Planned   | —      | —      | —      |
 | MariaDB       | ⬜ Planned   | —      | —      | —      |
-| MongoDB       | ⬜ Planned   | —      | —      | —      |
 | MS SQL Server | ⬜ Planned   | —      | —      | —      |
 
 ---

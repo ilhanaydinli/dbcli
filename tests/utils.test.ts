@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'bun:test'
 
-import { parseConnectionUrl } from '@/helpers/utils'
-import { DbNameSchema, FilenameSchema, PortSchema, zodValidate } from '@/validations'
+import { parseConnectionUrl, parseMongoUrl } from '@/helpers/utils'
+import {
+    DbNameSchema,
+    FilenameSchema,
+    MongoUriSchema,
+    PortSchema,
+    zodValidate,
+} from '@/validations'
 
 describe('DbNameSchema', () => {
     it('should accept valid alphanumeric names', () => {
@@ -103,6 +109,88 @@ describe('parseConnectionUrl', () => {
         expect(parseConnectionUrl('not-a-url')).toBeNull()
         expect(parseConnectionUrl('mysql://user:pass@host/db')).toBeNull()
         expect(parseConnectionUrl('')).toBeNull()
+    })
+})
+
+describe('parseMongoUrl', () => {
+    it('should parse a full mongodb:// URL', () => {
+        const result = parseMongoUrl('mongodb://admin:secret@db.example.com:27017/mydb')
+        expect(result).toEqual({
+            host: 'db.example.com',
+            port: 27017,
+            user: 'admin',
+            password: 'secret',
+            database: 'mydb',
+            ssl: false,
+        })
+    })
+
+    it('should parse mongodb+srv:// URL', () => {
+        const result = parseMongoUrl('mongodb+srv://user:pass@cluster.mongodb.net/mydb')
+        expect(result).not.toBeNull()
+        expect(result!.host).toBe('cluster.mongodb.net')
+        expect(result!.database).toBe('mydb')
+        expect(result!.port).toBe(27017)
+    })
+
+    it('should detect tls=true', () => {
+        const result = parseMongoUrl('mongodb://user:pass@host:27017/db?tls=true')
+        expect(result).not.toBeNull()
+        expect(result!.ssl).toBe(true)
+    })
+
+    it('should detect ssl=true', () => {
+        const result = parseMongoUrl('mongodb://user:pass@host:27017/db?ssl=true')
+        expect(result).not.toBeNull()
+        expect(result!.ssl).toBe(true)
+    })
+
+    it('should default to port 27017 when not specified', () => {
+        const result = parseMongoUrl('mongodb://localhost/mydb')
+        expect(result).not.toBeNull()
+        expect(result!.port).toBe(27017)
+    })
+
+    it('should default database to admin when not specified', () => {
+        const result = parseMongoUrl('mongodb://localhost/')
+        expect(result).not.toBeNull()
+        expect(result!.database).toBe('admin')
+    })
+
+    it('should decode URL-encoded credentials', () => {
+        const result = parseMongoUrl('mongodb://user:p%40ss%23word@host:27017/db')
+        expect(result).not.toBeNull()
+        expect(result!.password).toBe('p@ss#word')
+    })
+
+    it('should return null for non-mongo URLs', () => {
+        expect(parseMongoUrl('postgresql://user:pass@host/db')).toBeNull()
+        expect(parseMongoUrl('https://example.com')).toBeNull()
+        expect(parseMongoUrl('not-a-url')).toBeNull()
+        expect(parseMongoUrl('')).toBeNull()
+    })
+})
+
+describe('MongoUriSchema', () => {
+    it('should accept valid mongodb:// URIs', () => {
+        expect(zodValidate(MongoUriSchema, 'mongodb://localhost:27017/mydb')).toBeUndefined()
+        expect(zodValidate(MongoUriSchema, 'mongodb://user:pass@host:27017/db')).toBeUndefined()
+    })
+
+    it('should accept valid mongodb+srv:// URIs', () => {
+        expect(
+            zodValidate(MongoUriSchema, 'mongodb+srv://user:pass@cluster.mongodb.net/mydb'),
+        ).toBeUndefined()
+    })
+
+    it('should reject non-mongo URIs', () => {
+        expect(zodValidate(MongoUriSchema, 'postgresql://user:pass@host/db')).toBeDefined()
+        expect(zodValidate(MongoUriSchema, 'https://example.com')).toBeDefined()
+        expect(zodValidate(MongoUriSchema, 'just-a-string')).toBeDefined()
+    })
+
+    it('should reject empty string', () => {
+        expect(zodValidate(MongoUriSchema, '')).toBe('MongoDB URI is required')
     })
 })
 
