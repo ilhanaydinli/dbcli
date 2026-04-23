@@ -1,6 +1,6 @@
 {
     "name": "@ilhanaydinli/dbcli",
-    "version": "1.2.3",
+    "version": "1.3.0",
     "description": "A powerful, interactive CLI tool for managing database connections, imports, exports, and operations.",
     "module": "src/index.ts",
     "type": "module",
