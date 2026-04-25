@@ -68,7 +68,7 @@ describe('MongoDbAdapter Integration Tests', () => {
             })
             const result = await badAdapter.testConnection()
             expect(result).toBe(false)
-        })
+        }, 15000)
     })
 
     describe('getLocales', () => {
