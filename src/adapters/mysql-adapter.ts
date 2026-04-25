@@ -41,6 +41,8 @@ export class MySQLAdapter implements DatabaseAdapter {
     }
 
     private getConnectionArgs() {
+        // --protocol=TCP forces TCP even when host is "localhost"; otherwise the
+        // mysql client falls back to a UNIX socket and ignores -h/-P.
         const args = [
             '-h',
             this.config.host,
@@ -48,6 +50,7 @@ export class MySQLAdapter implements DatabaseAdapter {
             this.config.port.toString(),
             '-u',
             this.config.user,
+            '--protocol=TCP',
         ]
         if (this.config.ssl) args.push('--ssl-mode=REQUIRED')
         return args

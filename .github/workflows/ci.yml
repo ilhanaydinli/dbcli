@@ -140,18 +140,4 @@ jobs:
               run: bun install --frozen-lockfile
 
             - name: Run tests
-              env:
-                  POSTGRES_HOST: 127.0.0.1
-                  POSTGRES_PORT: 5433
-                  POSTGRES_USER: postgres
-                  POSTGRES_PASSWORD: postgres
-                  POSTGRES_DB: testdb
-                  MONGO_HOST: 127.0.0.1
-                  MONGO_PORT: 27017
-                  MONGO_DB: testdb
-                  MYSQL_HOST: 127.0.0.1
-                  MYSQL_PORT: 3307
-                  MYSQL_USER: root
-                  MYSQL_PASSWORD: mysql
-                  MYSQL_DB: testdb
               run: bun test
