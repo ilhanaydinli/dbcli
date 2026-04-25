@@ -87,6 +87,18 @@ jobs:
                     --health-interval=10s
                     --health-timeout=5s
                     --health-retries=5
+            mysql:
+                image: mysql:8
+                env:
+                    MYSQL_ROOT_PASSWORD: mysql
+                    MYSQL_DATABASE: testdb
+                ports:
+                    - 3307:3306
+                options: >-
+                    --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pmysql"
+                    --health-interval=10s
+                    --health-timeout=5s
+                    --health-retries=10
 
         steps:
             - name: Checkout
@@ -108,7 +120,8 @@ jobs:
                   sudo apt-get install -y -qq --no-install-recommends \
                     postgresql-client-17 \
                     mongodb-mongosh \
-                    mongodb-database-tools
+                    mongodb-database-tools \
+                    mysql-client
 
             - name: Setup Bun
               uses: oven-sh/setup-bun@v2.2.0
