@@ -8,6 +8,8 @@ import { DbNameSchema, zodValidate } from '@/validations'
 const DB_TYPE_ICONS: Record<DbType, string> = {
     [DbType.Postgres]: '🐘',
     [DbType.MongoDB]: '🍃',
+    [DbType.MySQL]: '🐬',
+    [DbType.MariaDB]: '🦭',
 }
 
 export function formatConnectionLabel(c: DbConfig): string {
@@ -104,6 +106,26 @@ export function parseMongoUrl(url: string): ParsedConnectionUrl | null {
             ssl:
                 parsed.searchParams.get('tls') === 'true' ||
                 parsed.searchParams.get('ssl') === 'true',
+        }
+    } catch {
+        return null
+    }
+}
+
+export function parseMySQLUrl(url: string): ParsedConnectionUrl | null {
+    try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== 'mysql:' && parsed.protocol !== 'mariadb:') return null
+
+        return {
+            host: parsed.hostname || 'localhost',
+            port: Number(parsed.port) || 3306,
+            user: decodeURIComponent(parsed.username) || 'root',
+            password: decodeURIComponent(parsed.password) || '',
+            database: parsed.pathname.replace(/^\//, '') || 'mysql',
+            ssl:
+                parsed.searchParams.get('ssl-mode') === 'REQUIRED' ||
+                parsed.searchParams.get('sslmode') === 'require',
         }
     } catch {
         return null
