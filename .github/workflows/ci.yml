@@ -17,16 +17,16 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
 
             - name: Setup Bun
-              uses: oven-sh/setup-bun@v2
+              uses: oven-sh/setup-bun@v2.2.0
               with:
                   bun-version: latest
 
             - name: Cache dependencies
               if: ${{ !env.ACT }}
-              uses: actions/cache@v4
+              uses: actions/cache@v5
               with:
                   path: ~/.bun/install/cache
                   key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
@@ -35,17 +35,30 @@ jobs:
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
-            - name: Type check
-              run: bun run check:types
+            - name: Quality checks (parallel)
+              shell: bash
+              run: |
+                  bun run check:types  > /tmp/types.log  2>&1 &
+                  PID_TYPES=$!
+                  bun run check:lint   > /tmp/lint.log   2>&1 &
+                  PID_LINT=$!
+                  bun run check:format > /tmp/format.log 2>&1 &
+                  PID_FORMAT=$!
+                  bun run knip         > /tmp/knip.log   2>&1 &
+                  PID_KNIP=$!
 
-            - name: Lint
-              run: bun run check:lint
+                  FAIL=0
+                  wait $PID_TYPES  || FAIL=1
+                  wait $PID_LINT   || FAIL=1
+                  wait $PID_FORMAT || FAIL=1
+                  wait $PID_KNIP   || FAIL=1
 
-            - name: Format check
-              run: bun run check:format
+                  echo "::group::Type check"; cat /tmp/types.log;  echo "::endgroup::"
+                  echo "::group::Lint";       cat /tmp/lint.log;   echo "::endgroup::"
+                  echo "::group::Format";     cat /tmp/format.log; echo "::endgroup::"
+                  echo "::group::Knip";       cat /tmp/knip.log;   echo "::endgroup::"
 
-            - name: Unused code check
-              run: bun run knip
+                  exit $FAIL
 
     test:
         name: Integration Tests
@@ -77,30 +90,34 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
 
-            - name: Install PostgreSQL client
+            - name: Install DB client tools
+              shell: bash
               run: |
-                  sudo apt-get update
-                  sudo apt-get install -y postgresql-common
+                  set -e
+                  curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc \
+                    | sudo gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg
+                  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" \
+                    | sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
+
+                  sudo apt-get update -qq
+                  sudo apt-get install -y -qq postgresql-common
                   sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-                  sudo apt-get install -y postgresql-client-17
 
-            - name: Install MongoDB tools
-              run: |
-                  curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
-                  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list
-                  sudo apt-get update
-                  sudo apt-get install -y mongodb-mongosh mongodb-database-tools
+                  sudo apt-get install -y -qq --no-install-recommends \
+                    postgresql-client-17 \
+                    mongodb-mongosh \
+                    mongodb-database-tools
 
             - name: Setup Bun
-              uses: oven-sh/setup-bun@v2
+              uses: oven-sh/setup-bun@v2.2.0
               with:
                   bun-version: latest
 
             - name: Cache dependencies
               if: ${{ !env.ACT }}
-              uses: actions/cache@v4
+              uses: actions/cache@v5
               with:
                   path: ~/.bun/install/cache
                   key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
