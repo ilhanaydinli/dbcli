@@ -12,6 +12,7 @@ import {
     logWarn,
     parseConnectionUrl,
     parseMongoUrl,
+    parseMySQLUrl,
 } from '@/helpers/utils'
 import type { DbConfig } from '@/interfaces'
 import { DbType } from '@/interfaces'
@@ -36,7 +37,7 @@ export async function showConnectionMenu(): Promise<void> {
                 {
                     label: 'Add from URL',
                     value: ConnectionMenuAction.AddFromUrl,
-                    hint: 'postgresql:// or mongodb://',
+                    hint: 'postgresql://, mongodb://, mysql://',
                 },
                 { label: 'Edit Connection', value: ConnectionMenuAction.Edit },
                 { label: 'Update Password', value: ConnectionMenuAction.UpdatePassword },
@@ -65,11 +66,11 @@ const menuActions: Partial<Record<ConnectionMenuAction, () => void | Promise<voi
 async function addConnectionFromUrl(): Promise<void> {
     const url = await text({
         message: 'Paste connection URL',
-        placeholder:
-            'postgresql://user:password@host:5432/database or mongodb://user:password@host:27017/db',
+        placeholder: 'postgresql://..., mongodb://..., or mysql://user:password@host:3306/database',
         validate: (value) => {
             if (!value) return 'URL is required'
-            if (!parseConnectionUrl(value) && !parseMongoUrl(value)) return 'Invalid connection URL'
+            if (!parseConnectionUrl(value) && !parseMongoUrl(value) && !parseMySQLUrl(value))
+                return 'Invalid connection URL'
             return undefined
         },
     })
@@ -78,6 +79,8 @@ async function addConnectionFromUrl(): Promise<void> {
 
     const urlStr = url as string
     const isMongoUrl = urlStr.startsWith('mongodb://') || urlStr.startsWith('mongodb+srv://')
+    const isMySQLUrl = urlStr.startsWith('mysql://')
+    const isMariaDBUrl = urlStr.startsWith('mariadb://')
 
     if (isMongoUrl) {
         const parsed = parseMongoUrl(urlStr)!
@@ -90,6 +93,17 @@ async function addConnectionFromUrl(): Promise<void> {
             database: parsed.database,
             ssl: parsed.ssl,
             uri: urlStr,
+        })
+    } else if (isMySQLUrl || isMariaDBUrl) {
+        const parsed = parseMySQLUrl(urlStr)!
+        await addConnection({
+            type: isMariaDBUrl ? DbType.MariaDB : DbType.MySQL,
+            host: parsed.host,
+            port: parsed.port,
+            user: parsed.user,
+            password: parsed.password,
+            database: parsed.database,
+            ssl: parsed.ssl,
         })
     } else {
         const parsed = parseConnectionUrl(urlStr)!
@@ -117,6 +131,8 @@ async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
         initialValue: initialValues?.type || DbType.Postgres,
         options: [
             { label: 'PostgreSQL', value: DbType.Postgres },
+            { label: 'MySQL', value: DbType.MySQL },
+            { label: 'MariaDB', value: DbType.MariaDB },
             { label: 'MongoDB', value: DbType.MongoDB },
         ],
     })
@@ -126,6 +142,8 @@ async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
 
     if (dbType === DbType.MongoDB) {
         await addMongoConnection(name as string, initialValues)
+    } else if (dbType === DbType.MySQL || dbType === DbType.MariaDB) {
+        await addMySQLConnection(name as string, dbType, initialValues)
     } else {
         await addPostgresConnection(name as string, initialValues)
     }
@@ -190,6 +208,68 @@ async function addPostgresConnection(
     }
 
     await testAndSaveConfig(config, () => addPostgresConnection(name, config))
+}
+
+async function addMySQLConnection(
+    name: string,
+    type: DbType.MySQL | DbType.MariaDB,
+    initialValues?: Partial<DbConfig>,
+): Promise<void> {
+    const host = await text({
+        message: 'Host',
+        initialValue: initialValues?.host || 'localhost',
+        validate: (value) => zodValidate(HostSchema, value),
+    })
+    if (isCancel(host)) return
+
+    const port = await text({
+        message: 'Port',
+        initialValue: String(initialValues?.port || 3306),
+        validate: (value) => zodValidate(PortSchema, value),
+    })
+    if (isCancel(port)) return
+
+    const database = await text({
+        message: 'Maintenance Database',
+        initialValue: initialValues?.database || 'mysql',
+        validate: (value) => zodValidate(DatabaseSchema, value),
+    })
+    if (isCancel(database)) return
+
+    const user = await text({
+        message: 'Username',
+        initialValue: initialValues?.user || 'root',
+        validate: (value) => zodValidate(UsernameSchema, value),
+    })
+    if (isCancel(user)) return
+
+    const pw = await password({ message: 'Password' })
+    if (isCancel(pw)) return
+
+    const ssl = await confirm({
+        message: 'Use SSL?',
+        initialValue: initialValues?.ssl ?? false,
+    })
+    if (isCancel(ssl)) return
+
+    const group = await selectGroup(initialValues?.group)
+    if (group === null) return
+
+    const config: DbConfig = {
+        id: initialValues?.id || randomUUID(),
+        name,
+        type,
+        host: host as string,
+        port: Number(port),
+        database: database as string,
+        user: user as string,
+        password: (pw as string) || initialValues?.password || '',
+        ssl: ssl as boolean,
+        verbose: false,
+        group: group || undefined,
+    }
+
+    await testAndSaveConfig(config, () => addMySQLConnection(name, type, config))
 }
 
 async function addMongoConnection(name: string, initialValues?: Partial<DbConfig>): Promise<void> {

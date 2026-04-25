@@ -49,7 +49,7 @@ describe('DbConfigSchema', () => {
     })
 
     it('should reject invalid type', () => {
-        const config = createTestConfig({ type: 'mysql' as DbConfig['type'] })
+        const config = createTestConfig({ type: 'sqlite' as DbConfig['type'] })
         const result = DbConfigSchema.safeParse(config)
         expect(result.success).toBe(false)
     })

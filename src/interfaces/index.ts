@@ -3,6 +3,8 @@ import { z } from 'zod'
 export enum DbType {
     Postgres = 'postgres',
     MongoDB = 'mongodb',
+    MySQL = 'mysql',
+    MariaDB = 'mariadb',
 }
 
 const DbTypeSchema = z.nativeEnum(DbType)

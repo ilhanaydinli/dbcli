@@ -59,6 +59,8 @@ export async function showImportMenu(): Promise<void> {
     const extensionsMap: Record<DbType, string[]> = {
         [DbType.Postgres]: ['.sql'],
         [DbType.MongoDB]: ['.archive'],
+        [DbType.MySQL]: ['.sql'],
+        [DbType.MariaDB]: ['.sql'],
     }
     const allowedExtensions = extensionsMap[targetConfig.type] || []
 
