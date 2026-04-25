@@ -4,13 +4,13 @@ A CLI tool for managing database connections, imports, exports, and operations.
 
 ## 🏗️ Tech Stack
 
-| Component   | Technology                 |
-| ----------- | -------------------------- |
-| Runtime     | Bun                        |
-| Language    | TypeScript (strict mode)   |
-| Database    | PostgreSQL (psql, pg_dump) |
-| CLI Prompts | `@clack/prompts`           |
-| Validation  | `zod`                      |
+| Component   | Technology                                                                                          |
+| ----------- | --------------------------------------------------------------------------------------------------- |
+| Runtime     | Bun                                                                                                 |
+| Language    | TypeScript (strict mode)                                                                            |
+| Databases   | PostgreSQL (`psql`, `pg_dump`), MySQL/MariaDB (`mysql`, `mysqldump`), MongoDB (`mongosh`, `mongodump`, `mongorestore`) |
+| CLI Prompts | `@clack/prompts`                                                                                    |
+| Validation  | `zod`                                                                                               |
 
 ## 📁 Directory Structure
 
@@ -22,6 +22,9 @@ src/
 │   ├── types.ts          # Menu action enums
 │   └── menus/            # Menu handlers
 ├── adapters/
+│   ├── adapter-factory.ts
+│   ├── mongodb-adapter.ts
+│   ├── mysql-adapter.ts        # Used for both MySQL and MariaDB
 │   └── postgres-adapter.ts
 ├── core/
 │   └── config-manager.ts  # Singleton
