@@ -5,12 +5,21 @@ import { AdapterFactory } from '@/adapters/adapter-factory'
 import { ensureConnectionsExist } from '@/cli/prompts'
 import { ConnectionMenuAction } from '@/cli/types'
 import { ConfigManager } from '@/core/config-manager'
-import { logError, logSuccess, logWarn, parseConnectionUrl } from '@/helpers/utils'
-import type { DbConfig, DbType } from '@/interfaces'
+import {
+    formatConnectionLabel,
+    logError,
+    logSuccess,
+    logWarn,
+    parseConnectionUrl,
+    parseMongoUrl,
+} from '@/helpers/utils'
+import type { DbConfig } from '@/interfaces'
+import { DbType } from '@/interfaces'
 import {
     ConnectionNameSchema,
     DatabaseSchema,
     HostSchema,
+    MongoUriSchema,
     PortSchema,
     UsernameSchema,
     zodValidate,
@@ -27,7 +36,7 @@ export async function showConnectionMenu(): Promise<void> {
                 {
                     label: 'Add from URL',
                     value: ConnectionMenuAction.AddFromUrl,
-                    hint: 'postgresql://...',
+                    hint: 'postgresql:// or mongodb://',
                 },
                 { label: 'Edit Connection', value: ConnectionMenuAction.Edit },
                 { label: 'Update Password', value: ConnectionMenuAction.UpdatePassword },
@@ -56,26 +65,43 @@ const menuActions: Partial<Record<ConnectionMenuAction, () => void | Promise<voi
 async function addConnectionFromUrl(): Promise<void> {
     const url = await text({
         message: 'Paste connection URL',
-        placeholder: 'postgresql://user:password@host:5432/database?sslmode=require',
+        placeholder:
+            'postgresql://user:password@host:5432/database or mongodb://user:password@host:27017/db',
         validate: (value) => {
             if (!value) return 'URL is required'
-            if (!parseConnectionUrl(value)) return 'Invalid PostgreSQL URL'
+            if (!parseConnectionUrl(value) && !parseMongoUrl(value)) return 'Invalid connection URL'
             return undefined
         },
     })
 
     if (isCancel(url)) return
 
-    const parsed = parseConnectionUrl(url as string)!
+    const urlStr = url as string
+    const isMongoUrl = urlStr.startsWith('mongodb://') || urlStr.startsWith('mongodb+srv://')
 
-    await addConnection({
-        host: parsed.host,
-        port: parsed.port,
-        user: parsed.user,
-        password: parsed.password,
-        database: parsed.database,
-        ssl: parsed.ssl,
-    })
+    if (isMongoUrl) {
+        const parsed = parseMongoUrl(urlStr)!
+        await addConnection({
+            type: DbType.MongoDB,
+            host: parsed.host,
+            port: parsed.port,
+            user: parsed.user,
+            password: parsed.password,
+            database: parsed.database,
+            ssl: parsed.ssl,
+            uri: urlStr,
+        })
+    } else {
+        const parsed = parseConnectionUrl(urlStr)!
+        await addConnection({
+            host: parsed.host,
+            port: parsed.port,
+            user: parsed.user,
+            password: parsed.password,
+            database: parsed.database,
+            ssl: parsed.ssl,
+        })
+    }
 }
 
 async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
@@ -88,11 +114,27 @@ async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
 
     const type = await select({
         message: 'Database Type',
-        initialValue: 'postgres',
-        options: [{ label: 'PostgreSQL', value: 'postgres' }],
+        initialValue: initialValues?.type || DbType.Postgres,
+        options: [
+            { label: 'PostgreSQL', value: DbType.Postgres },
+            { label: 'MongoDB', value: DbType.MongoDB },
+        ],
     })
     if (isCancel(type)) return
 
+    const dbType = type as DbType
+
+    if (dbType === DbType.MongoDB) {
+        await addMongoConnection(name as string, initialValues)
+    } else {
+        await addPostgresConnection(name as string, initialValues)
+    }
+}
+
+async function addPostgresConnection(
+    name: string,
+    initialValues?: Partial<DbConfig>,
+): Promise<void> {
     const host = await text({
         message: 'Host',
         initialValue: initialValues?.host || 'localhost',
@@ -121,9 +163,7 @@ async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
     })
     if (isCancel(user)) return
 
-    const pw = await password({
-        message: 'Password',
-    })
+    const pw = await password({ message: 'Password' })
     if (isCancel(pw)) return
 
     const ssl = await confirm({
@@ -137,8 +177,8 @@ async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
 
     const config: DbConfig = {
         id: initialValues?.id || randomUUID(),
-        name: name as string,
-        type: type as DbType,
+        name,
+        type: DbType.Postgres,
         host: host as string,
         port: Number(port),
         database: database as string,
@@ -149,6 +189,126 @@ async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
         group: group || undefined,
     }
 
+    await testAndSaveConfig(config, () => addPostgresConnection(name, config))
+}
+
+async function addMongoConnection(name: string, initialValues?: Partial<DbConfig>): Promise<void> {
+    const useUri = await confirm({
+        message: 'Connect using a URI?',
+        initialValue: !!initialValues?.uri,
+    })
+    if (isCancel(useUri)) return
+
+    if (useUri) {
+        await addMongoConnectionFromUri(name, initialValues)
+    } else {
+        await addMongoConnectionFromFields(name, initialValues)
+    }
+}
+
+async function addMongoConnectionFromUri(
+    name: string,
+    initialValues?: Partial<DbConfig>,
+): Promise<void> {
+    const uri = await text({
+        message: 'MongoDB URI',
+        placeholder: 'mongodb://user:password@host:27017/mydb',
+        initialValue: initialValues?.uri,
+        validate: (value) => zodValidate(MongoUriSchema, value),
+    })
+    if (isCancel(uri)) return
+
+    const parsed = parseMongoUrl(uri as string)
+
+    const database = await text({
+        message: 'Default Database',
+        initialValue: initialValues?.database || parsed?.database || 'admin',
+        validate: (value) => zodValidate(DatabaseSchema, value),
+    })
+    if (isCancel(database)) return
+
+    const group = await selectGroup(initialValues?.group)
+    if (group === null) return
+
+    const config: DbConfig = {
+        id: initialValues?.id || randomUUID(),
+        name,
+        type: DbType.MongoDB,
+        host: parsed?.host || 'localhost',
+        port: parsed?.port || 27017,
+        user: parsed?.user || '',
+        password: parsed?.password || initialValues?.password || '',
+        database: database as string,
+        ssl: parsed?.ssl ?? false,
+        verbose: false,
+        group: group || undefined,
+        uri: uri as string,
+    }
+
+    await testAndSaveConfig(config, () => addMongoConnectionFromUri(name, config))
+}
+
+async function addMongoConnectionFromFields(
+    name: string,
+    initialValues?: Partial<DbConfig>,
+): Promise<void> {
+    const host = await text({
+        message: 'Host',
+        initialValue: initialValues?.host || 'localhost',
+        validate: (value) => zodValidate(HostSchema, value),
+    })
+    if (isCancel(host)) return
+
+    const port = await text({
+        message: 'Port',
+        initialValue: String(initialValues?.port || 27017),
+        validate: (value) => zodValidate(PortSchema, value),
+    })
+    if (isCancel(port)) return
+
+    const database = await text({
+        message: 'Default Database',
+        initialValue: initialValues?.database || 'admin',
+        validate: (value) => zodValidate(DatabaseSchema, value),
+    })
+    if (isCancel(database)) return
+
+    const user = await text({
+        message: 'Username (leave empty if no auth)',
+        initialValue: initialValues?.user,
+    })
+    if (isCancel(user)) return
+
+    const pw = await password({ message: 'Password' })
+    if (isCancel(pw)) return
+
+    const ssl = await confirm({
+        message: 'Use TLS/SSL?',
+        initialValue: initialValues?.ssl ?? false,
+    })
+    if (isCancel(ssl)) return
+
+    const group = await selectGroup(initialValues?.group)
+    if (group === null) return
+
+    const config: DbConfig = {
+        id: initialValues?.id || randomUUID(),
+        name,
+        type: DbType.MongoDB,
+        host: host as string,
+        port: Number(port),
+        database: database as string,
+        user: (user as string) || '',
+        password: (pw as string) || initialValues?.password || '',
+        ssl: ssl as boolean,
+        verbose: false,
+        group: group || undefined,
+    }
+
+    await testAndSaveConfig(config, () => addMongoConnectionFromFields(name, config))
+}
+
+async function testAndSaveConfig(config: DbConfig, retryFn: () => Promise<void>): Promise<void> {
     const s = spinner()
     s.start('Testing connection...')
     const adapter = AdapterFactory.createAdapter(config)
@@ -167,7 +327,7 @@ async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
         if (isCancel(retry)) return
 
         if (retry) {
-            return addConnection(config)
+            return retryFn()
         }
 
         const save = await confirm({
@@ -189,7 +349,7 @@ async function editConnection(): Promise<void> {
 
     const id = await select({
         message: 'Select connection to edit',
-        options: configs.map((c: DbConfig) => ({ label: c.name, value: c.id })),
+        options: configs.map((c: DbConfig) => ({ label: formatConnectionLabel(c), value: c.id })),
     })
 
     if (isCancel(id)) {
@@ -217,7 +377,7 @@ async function updatePassword(): Promise<void> {
     const id = await select({
         message: 'Select connection to update password',
         options: configs.map((c: DbConfig) => ({
-            label: `${c.name} (${c.host}:${c.database})`,
+            label: formatConnectionLabel(c),
             value: c.id,
         })),
     })
@@ -246,7 +406,7 @@ async function removeConnection(): Promise<void> {
 
     const id = await select({
         message: 'Select connection to remove',
-        options: configs.map((c: DbConfig) => ({ label: c.name, value: c.id })),
+        options: configs.map((c: DbConfig) => ({ label: formatConnectionLabel(c), value: c.id })),
     })
 
     if (isCancel(id)) {

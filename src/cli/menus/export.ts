@@ -4,6 +4,7 @@ import { existsSync } from 'fs'
 import { AdapterFactory } from '@/adapters/adapter-factory'
 import { fetchDatabaseList, selectConfig } from '@/cli/prompts'
 import { logWarn, withSpinner } from '@/helpers/utils'
+import { DbType } from '@/interfaces'
 import { FilenameSchema, zodValidate } from '@/validations'
 
 export async function showExportMenu(): Promise<void> {
@@ -27,9 +28,10 @@ export async function showExportMenu(): Promise<void> {
     const targetConfig = { ...config, database: database as string }
     const targetAdapter = AdapterFactory.createAdapter(targetConfig)
 
+    const ext = targetConfig.type === DbType.MongoDB ? 'archive' : 'sql'
     const filename = await text({
-        message: 'Output filename (default: dump_YYYYMMDD.sql)',
-        initialValue: `dump_${database}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.sql`,
+        message: `Output filename (default: dump_YYYYMMDD.${ext})`,
+        initialValue: `dump_${database}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.${ext}`,
         validate: (value) => zodValidate(FilenameSchema, value),
     })
 

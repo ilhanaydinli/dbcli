@@ -1,7 +1,20 @@
 import { log, spinner } from '@clack/prompts'
 
 import { ValidationError } from '@/errors'
+import type { DbConfig } from '@/interfaces'
+import { DbType } from '@/interfaces'
 import { DbNameSchema, zodValidate } from '@/validations'
+
+const DB_TYPE_ICONS: Record<DbType, string> = {
+    [DbType.Postgres]: '🐘',
+    [DbType.MongoDB]: '🍃',
+}
+
+export function formatConnectionLabel(c: DbConfig): string {
+    const icon = DB_TYPE_ICONS[c.type] ?? '🗄️'
+    const host = c.uri ? new URL(c.uri).hostname : c.host
+    return `${icon} ${c.name} (${host}:${c.database})`
+}
 
 export function assertValidDbName(name: string): void {
     const result = zodValidate(DbNameSchema, name)
@@ -71,6 +84,26 @@ export function parseConnectionUrl(url: string): ParsedConnectionUrl | null {
             password: decodeURIComponent(parsed.password) || '',
             database: parsed.pathname.replace(/^\//, '') || 'postgres',
             ssl: parsed.searchParams.get('sslmode') === 'require',
+        }
+    } catch {
+        return null
+    }
+}
+
+export function parseMongoUrl(url: string): ParsedConnectionUrl | null {
+    try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== 'mongodb:' && parsed.protocol !== 'mongodb+srv:') return null
+
+        return {
+            host: parsed.hostname || 'localhost',
+            port: Number(parsed.port) || 27017,
+            user: decodeURIComponent(parsed.username) || '',
+            password: decodeURIComponent(parsed.password) || '',
+            database: parsed.pathname.replace(/^\//, '') || 'admin',
+            ssl:
+                parsed.searchParams.get('tls') === 'true' ||
+                parsed.searchParams.get('ssl') === 'true',
         }
     } catch {
         return null

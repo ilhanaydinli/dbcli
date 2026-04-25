@@ -1,7 +1,11 @@
 import { z } from 'zod'
 
-const DbTypeSchema = z.enum(['postgres'])
-export type DbType = z.infer<typeof DbTypeSchema>
+export enum DbType {
+    Postgres = 'postgres',
+    MongoDB = 'mongodb',
+}
+
+const DbTypeSchema = z.nativeEnum(DbType)
 
 export const DbConfigSchema = z.object({
     id: z.string(),
@@ -15,6 +19,7 @@ export const DbConfigSchema = z.object({
     ssl: z.boolean().default(false),
     verbose: z.boolean().default(false),
     group: z.string().optional(),
+    uri: z.string().optional(),
 })
 
 export type DbConfig = z.infer<typeof DbConfigSchema>

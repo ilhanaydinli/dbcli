@@ -27,6 +27,13 @@ export const FilenameSchema = z
         message: 'Filename contains invalid characters.',
     })
 
+export const MongoUriSchema = z
+    .string()
+    .min(1, 'MongoDB URI is required')
+    .refine((val) => val.startsWith('mongodb://') || val.startsWith('mongodb+srv://'), {
+        message: 'MongoDB URI must start with mongodb:// or mongodb+srv://',
+    })
+
 export const ConnectionNameSchema = z.string().min(1, 'Connection name is required')
 export const HostSchema = z.string().min(1, 'Host is required')
 export const DatabaseSchema = z.string().min(1, 'Database name is required')

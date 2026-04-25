@@ -65,6 +65,15 @@ jobs:
                     --health-interval=10s
                     --health-timeout=5s
                     --health-retries=5
+            mongodb:
+                image: mongo:8.0
+                ports:
+                    - 27017:27017
+                options: >-
+                    --health-cmd="mongosh --eval 'db.runCommand({ ping: 1 })'"
+                    --health-interval=10s
+                    --health-timeout=5s
+                    --health-retries=5
 
         steps:
             - name: Checkout
@@ -76,6 +85,13 @@ jobs:
                   sudo apt-get install -y postgresql-common
                   sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
                   sudo apt-get install -y postgresql-client-17
+
+            - name: Install MongoDB tools
+              run: |
+                  curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+                  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+                  sudo apt-get update
+                  sudo apt-get install -y mongodb-mongosh mongodb-database-tools
 
             - name: Setup Bun
               uses: oven-sh/setup-bun@v2

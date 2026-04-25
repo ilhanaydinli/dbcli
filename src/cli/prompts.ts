@@ -3,7 +3,7 @@ import { isCancel, select, text } from '@clack/prompts'
 import { LocaleMenuAction } from '@/cli/types'
 import { ConfigManager } from '@/core/config-manager'
 import { ConfigError, ConnectionError } from '@/errors'
-import { logInfo, withSpinner } from '@/helpers/utils'
+import { formatConnectionLabel, logInfo, withSpinner } from '@/helpers/utils'
 import type { DatabaseAdapter, DatabaseInfo, DbConfig } from '@/interfaces'
 
 const configManager = ConfigManager.getInstance()
@@ -21,14 +21,14 @@ export async function selectConfig(): Promise<DbConfig> {
 
     if (configs.length === 1) {
         const config = configs[0]
-        logInfo(`Using default connection: ${config.name} (${config.host}:${config.database})`)
+        logInfo(`Using default connection: ${formatConnectionLabel(config)}`)
         return config
     }
 
     const id = await select({
         message: 'Select Database Connection',
         options: configs.map((c: DbConfig) => ({
-            label: `${c.name} (${c.host}:${c.database})`,
+            label: formatConnectionLabel(c),
             value: c.id,
             hint: c.group,
         })),

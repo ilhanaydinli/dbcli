@@ -5,6 +5,7 @@ import { join } from 'path'
 
 import { decrypt, encrypt } from '@/helpers/crypto'
 import type { DbConfig } from '@/interfaces'
+import { DbType } from '@/interfaces'
 import { DbConfigSchema } from '@/interfaces'
 
 const testConfigPath = join(tmpdir(), '.db-cli-test-config.json')
@@ -13,7 +14,7 @@ const testExportPath = join(tmpdir(), 'db-cli-export-test.json')
 const createTestConfig = (overrides: Partial<DbConfig> = {}): DbConfig => ({
     id: crypto.randomUUID(),
     name: 'Test Connection',
-    type: 'postgres',
+    type: DbType.Postgres,
     host: 'localhost',
     port: 5432,
     user: 'postgres',
@@ -35,7 +36,7 @@ describe('DbConfigSchema', () => {
         const partial = {
             id: 'test-id',
             name: 'Test',
-            type: 'postgres',
+            type: DbType.Postgres,
             host: 'localhost',
             port: 5432,
             user: 'admin',

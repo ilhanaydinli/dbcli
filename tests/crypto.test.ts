@@ -12,7 +12,7 @@ describe('Crypto Helper', () => {
 
             expect(encrypted).toBeString()
             expect(encrypted).toStartWith('ENC:')
-            expect(encrypted.split(':')).toHaveLength(4) // ENC:salt:iv:data
+            expect(encrypted.split(':')).toHaveLength(5)
         })
 
         it('should produce different output for same data (due to random salt/iv)', () => {

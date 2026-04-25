@@ -11,6 +11,7 @@ import {
     logWarn,
     withSpinner,
 } from '@/helpers/utils'
+import { DbType } from '@/interfaces'
 import { DbNameSchema, zodValidate } from '@/validations'
 
 export async function showImportMenu(): Promise<void> {
@@ -55,8 +56,9 @@ export async function showImportMenu(): Promise<void> {
     const targetConfig = { ...config, database: targetDbName as string }
     const targetAdapter = AdapterFactory.createAdapter(targetConfig)
 
-    const extensionsMap: Record<string, string[]> = {
-        postgres: ['.sql'],
+    const extensionsMap: Record<DbType, string[]> = {
+        [DbType.Postgres]: ['.sql'],
+        [DbType.MongoDB]: ['.archive'],
     }
     const allowedExtensions = extensionsMap[targetConfig.type] || []
 
