@@ -10,6 +10,7 @@ const DB_TYPE_ICONS: Record<DbType, string> = {
     [DbType.MongoDB]: '🍃',
     [DbType.MySQL]: '🐬',
     [DbType.MariaDB]: '🦭',
+    [DbType.MSSQL]: '🟦',
 }
 
 export function formatConnectionLabel(c: DbConfig): string {
@@ -126,6 +127,26 @@ export function parseMySQLUrl(url: string): ParsedConnectionUrl | null {
             ssl:
                 parsed.searchParams.get('ssl-mode') === 'REQUIRED' ||
                 parsed.searchParams.get('sslmode') === 'require',
+        }
+    } catch {
+        return null
+    }
+}
+
+export function parseMSSQLUrl(url: string): ParsedConnectionUrl | null {
+    try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== 'mssql:' && parsed.protocol !== 'sqlserver:') return null
+
+        return {
+            host: parsed.hostname || 'localhost',
+            port: Number(parsed.port) || 1433,
+            user: decodeURIComponent(parsed.username) || 'sa',
+            password: decodeURIComponent(parsed.password) || '',
+            database: parsed.pathname.replace(/^\//, '') || 'master',
+            ssl:
+                parsed.searchParams.get('encrypt') === 'true' ||
+                parsed.searchParams.get('tls') === 'true',
         }
     } catch {
         return null

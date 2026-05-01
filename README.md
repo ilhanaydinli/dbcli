@@ -27,6 +27,7 @@ A powerful, interactive CLI tool for managing database connections, imports, exp
     - **PostgreSQL:** `psql`, `pg_dump`
     - **MySQL/MariaDB:** `mysql`, `mysqldump`
     - **MongoDB:** `mongosh`, `mongodump`, `mongorestore`
+    - **SQL Server:** none — uses the bundled `mssql` driver, no system tools required
 
 ### Install globally
 
@@ -104,7 +105,15 @@ Manage databases on a selected connection:
 | MongoDB       | ✅ Supported | ✅     | ✅     | ✅     |
 | MySQL         | ✅ Supported | ✅     | ✅     | ✅     |
 | MariaDB       | ✅ Supported | ✅     | ✅     | ✅     |
-| MS SQL Server | ⬜ Planned   | —      | —      | —      |
+| MS SQL Server | ✅ Supported | ✅     | ✅     | ✅     |
+
+### SQL Server notes
+
+- Authentication: SQL Server Authentication only (Windows Auth not yet supported).
+- Export format: `.sql` containing `CREATE TABLE`, `INSERT INTO`, indexes, foreign keys, CHECK constraints, computed columns, and `DBCC CHECKIDENT` reseed for IDENTITY columns.
+- v1 dump scope covers **tables, primary keys, unique indexes, foreign keys, CHECK constraints, computed columns, multiple schemas, and identity reseed**. Views, stored procedures, triggers, and functions are **not yet included** in dumps (planned for v2).
+- Verified against SQL Server 2017 and 2022 (Linux Docker). Should also work on 2014/2016 since all queries use `sys.*` views available since 2005, but not empirically tested (Microsoft has no Linux Docker image for those).
+- Connection URL formats accepted: `mssql://user:pass@host:1433/database` or `sqlserver://...`.
 
 ---
 
