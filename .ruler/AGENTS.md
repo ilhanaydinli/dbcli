@@ -8,7 +8,7 @@ A CLI tool for managing database connections, imports, exports, and operations.
 | ----------- | --------------------------------------------------------------------------------------------------- |
 | Runtime     | Bun                                                                                                 |
 | Language    | TypeScript (strict mode)                                                                            |
-| Databases   | PostgreSQL (`psql`, `pg_dump`), MySQL/MariaDB (`mysql`, `mysqldump`), MongoDB (`mongosh`, `mongodump`, `mongorestore`) |
+| Databases   | PostgreSQL (`psql`, `pg_dump`), MySQL/MariaDB (`mysql`, `mysqldump`), MongoDB (`mongosh`, `mongodump`, `mongorestore`), SQL Server (`mssql` npm package — driver-based, no system CLI) |
 | CLI Prompts | `@clack/prompts`                                                                                    |
 | Validation  | `zod`                                                                                               |
 
@@ -24,6 +24,7 @@ src/
 ├── adapters/
 │   ├── adapter-factory.ts
 │   ├── mongodb-adapter.ts
+│   ├── mssql-adapter.ts        # Driver-based (mssql npm), no external CLI
 │   ├── mysql-adapter.ts        # Used for both MySQL and MariaDB
 │   └── postgres-adapter.ts
 ├── core/
@@ -93,6 +94,7 @@ if (handler) await handler()
     - Edit the relevant file in `.ruler/`
     - Run `bun run ruler` immediately after to regenerate the active rules.
 9. **Comments**: Only add short comments when necessary. Avoid verbose explanations in code.
+10. **Adapter dependencies**: Postgres/MySQL/MongoDB adapters spawn external CLI tools via `Bun.spawn`. The MSSQL adapter is the exception — it uses the `mssql` npm package directly (no system CLI required). When adding methods to MSSQL adapter, use the driver pattern (`pool.request().query()` / `.batch()`), not `Bun.spawn`.
 
 ## 📦 Commands
 

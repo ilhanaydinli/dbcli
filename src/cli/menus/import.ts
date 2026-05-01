@@ -61,6 +61,7 @@ export async function showImportMenu(): Promise<void> {
         [DbType.MongoDB]: ['.archive'],
         [DbType.MySQL]: ['.sql'],
         [DbType.MariaDB]: ['.sql'],
+        [DbType.MSSQL]: ['.sql'],
     }
     const allowedExtensions = extensionsMap[targetConfig.type] || []
 

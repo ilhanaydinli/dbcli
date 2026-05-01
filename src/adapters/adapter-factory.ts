@@ -1,4 +1,5 @@
 import { MongoDbAdapter } from '@/adapters/mongodb-adapter'
+import { MSSQLAdapter } from '@/adapters/mssql-adapter'
 import { MySQLAdapter } from '@/adapters/mysql-adapter'
 import { PostgresAdapter } from '@/adapters/postgres-adapter'
 import type { DatabaseAdapter, DbConfig } from '@/interfaces'
@@ -9,6 +10,7 @@ const adapterMap: Record<DbType, (config: DbConfig) => DatabaseAdapter> = {
     [DbType.MongoDB]: (config) => new MongoDbAdapter(config),
     [DbType.MySQL]: (config) => new MySQLAdapter(config),
     [DbType.MariaDB]: (config) => new MySQLAdapter(config),
+    [DbType.MSSQL]: (config) => new MSSQLAdapter(config),
 }
 
 export class AdapterFactory {

@@ -12,6 +12,7 @@ import {
     logWarn,
     parseConnectionUrl,
     parseMongoUrl,
+    parseMSSQLUrl,
     parseMySQLUrl,
 } from '@/helpers/utils'
 import type { DbConfig } from '@/interfaces'
@@ -37,7 +38,7 @@ export async function showConnectionMenu(): Promise<void> {
                 {
                     label: 'Add from URL',
                     value: ConnectionMenuAction.AddFromUrl,
-                    hint: 'postgresql://, mongodb://, mysql://',
+                    hint: 'postgresql://, mongodb://, mysql://, mssql://',
                 },
                 { label: 'Edit Connection', value: ConnectionMenuAction.Edit },
                 { label: 'Update Password', value: ConnectionMenuAction.UpdatePassword },
@@ -66,10 +67,16 @@ const menuActions: Partial<Record<ConnectionMenuAction, () => void | Promise<voi
 async function addConnectionFromUrl(): Promise<void> {
     const url = await text({
         message: 'Paste connection URL',
-        placeholder: 'postgresql://..., mongodb://..., or mysql://user:password@host:3306/database',
+        placeholder:
+            'postgresql://..., mongodb://..., mysql://..., or mssql://user:password@host:1433/database',
         validate: (value) => {
             if (!value) return 'URL is required'
-            if (!parseConnectionUrl(value) && !parseMongoUrl(value) && !parseMySQLUrl(value))
+            if (
+                !parseConnectionUrl(value) &&
+                !parseMongoUrl(value) &&
+                !parseMySQLUrl(value) &&
+                !parseMSSQLUrl(value)
+            )
                 return 'Invalid connection URL'
             return undefined
         },
@@ -81,6 +88,7 @@ async function addConnectionFromUrl(): Promise<void> {
     const isMongoUrl = urlStr.startsWith('mongodb://') || urlStr.startsWith('mongodb+srv://')
     const isMySQLUrl = urlStr.startsWith('mysql://')
     const isMariaDBUrl = urlStr.startsWith('mariadb://')
+    const isMSSQLUrl = urlStr.startsWith('mssql://') || urlStr.startsWith('sqlserver://')
 
     if (isMongoUrl) {
         const parsed = parseMongoUrl(urlStr)!
@@ -98,6 +106,17 @@ async function addConnectionFromUrl(): Promise<void> {
         const parsed = parseMySQLUrl(urlStr)!
         await addConnection({
             type: isMariaDBUrl ? DbType.MariaDB : DbType.MySQL,
+            host: parsed.host,
+            port: parsed.port,
+            user: parsed.user,
+            password: parsed.password,
+            database: parsed.database,
+            ssl: parsed.ssl,
+        })
+    } else if (isMSSQLUrl) {
+        const parsed = parseMSSQLUrl(urlStr)!
+        await addConnection({
+            type: DbType.MSSQL,
             host: parsed.host,
             port: parsed.port,
             user: parsed.user,
@@ -134,6 +153,7 @@ async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
             { label: 'MySQL', value: DbType.MySQL },
             { label: 'MariaDB', value: DbType.MariaDB },
             { label: 'MongoDB', value: DbType.MongoDB },
+            { label: 'SQL Server (MSSQL)', value: DbType.MSSQL },
         ],
     })
     if (isCancel(type)) return
@@ -144,6 +164,8 @@ async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
         await addMongoConnection(name as string, initialValues)
     } else if (dbType === DbType.MySQL || dbType === DbType.MariaDB) {
         await addMySQLConnection(name as string, dbType, initialValues)
+    } else if (dbType === DbType.MSSQL) {
+        await addMSSQLConnection(name as string, initialValues)
     } else {
         await addPostgresConnection(name as string, initialValues)
     }
@@ -270,6 +292,64 @@ async function addMySQLConnection(
     }
 
     await testAndSaveConfig(config, () => addMySQLConnection(name, type, config))
+}
+
+async function addMSSQLConnection(name: string, initialValues?: Partial<DbConfig>): Promise<void> {
+    const host = await text({
+        message: 'Host',
+        initialValue: initialValues?.host || 'localhost',
+        validate: (value) => zodValidate(HostSchema, value),
+    })
+    if (isCancel(host)) return
+
+    const port = await text({
+        message: 'Port',
+        initialValue: String(initialValues?.port || 1433),
+        validate: (value) => zodValidate(PortSchema, value),
+    })
+    if (isCancel(port)) return
+
+    const database = await text({
+        message: 'Maintenance Database',
+        initialValue: initialValues?.database || 'master',
+        validate: (value) => zodValidate(DatabaseSchema, value),
+    })
+    if (isCancel(database)) return
+
+    const user = await text({
+        message: 'Username',
+        initialValue: initialValues?.user || 'sa',
+        validate: (value) => zodValidate(UsernameSchema, value),
+    })
+    if (isCancel(user)) return
+
+    const pw = await password({ message: 'Password' })
+    if (isCancel(pw)) return
+
+    const ssl = await confirm({
+        message: 'Use SSL/Encrypt?',
+        initialValue: initialValues?.ssl ?? false,
+    })
+    if (isCancel(ssl)) return
+
+    const group = await selectGroup(initialValues?.group)
+    if (group === null) return
+
+    const config: DbConfig = {
+        id: initialValues?.id || randomUUID(),
+        name,
+        type: DbType.MSSQL,
+        host: host as string,
+        port: Number(port),
+        database: database as string,
+        user: user as string,
+        password: (pw as string) || initialValues?.password || '',
+        ssl: ssl as boolean,
+        verbose: false,
+        group: group || undefined,
+    }
+
+    await testAndSaveConfig(config, () => addMSSQLConnection(name, config))
 }
 
 async function addMongoConnection(name: string, initialValues?: Partial<DbConfig>): Promise<void> {

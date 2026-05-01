@@ -5,6 +5,7 @@ export enum DbType {
     MongoDB = 'mongodb',
     MySQL = 'mysql',
     MariaDB = 'mariadb',
+    MSSQL = 'mssql',
 }
 
 const DbTypeSchema = z.nativeEnum(DbType)
