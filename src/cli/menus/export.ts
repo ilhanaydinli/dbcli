@@ -5,7 +5,7 @@ import { join } from 'path'
 import { AdapterFactory } from '@/adapters/adapter-factory'
 import { fetchDatabaseList, selectConfig, selectPath, selectWithSearch } from '@/cli/prompts'
 import { ConfigManager } from '@/core/config-manager'
-import { logWarn, withSpinner } from '@/helpers/utils'
+import { logWarn, withSpinner, withTimedSpinner } from '@/helpers/utils'
 import { DbType } from '@/interfaces'
 import { FilenameSchema, zodValidate } from '@/validations'
 
@@ -64,9 +64,10 @@ export async function showExportMenu(): Promise<void> {
         }
     }
 
-    await withSpinner(
+    await withTimedSpinner(
         `Exporting database '${targetConfig.database}'...`,
         () => targetAdapter.export(fullPath),
         `Export completed successfully to ${fullPath}`,
+        'Export failed',
     )
 }

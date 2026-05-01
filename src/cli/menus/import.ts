@@ -10,7 +10,7 @@ import {
     selectWithSearch,
 } from '@/cli/prompts'
 import { ConfigManager } from '@/core/config-manager'
-import { logSuccess, withSpinner } from '@/helpers/utils'
+import { logSuccess, withSpinner, withTimedSpinner } from '@/helpers/utils'
 import { DbType } from '@/interfaces'
 import { DbNameSchema, zodValidate } from '@/validations'
 
@@ -86,7 +86,7 @@ export async function showImportMenu(): Promise<void> {
 
     if (isCancel(resetResponse)) return
 
-    await withSpinner(
+    await withTimedSpinner(
         `Importing into '${targetConfig.database}'...`,
         () => targetAdapter.import(filePath, { reset: resetResponse as boolean }),
         'Import completed successfully!',

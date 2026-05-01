@@ -170,3 +170,36 @@ export async function withSpinner<T>(
         throw error
     }
 }
+
+export function formatElapsed(ms: number): string {
+    if (ms < 1000) return `${ms}ms`
+    const seconds = Math.floor(ms / 1000)
+    if (seconds < 60) return `${seconds}s`
+    const minutes = Math.floor(seconds / 60)
+    const remSec = seconds % 60
+    if (minutes < 60) return remSec > 0 ? `${minutes}m ${remSec}s` : `${minutes}m`
+    const hours = Math.floor(minutes / 60)
+    const remMin = minutes % 60
+    return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`
+}
+
+export async function withTimedSpinner<T>(
+    startMessage: string,
+    action: () => Promise<T>,
+    successMessage?: string,
+    failureMessage?: string,
+): Promise<T> {
+    const s = spinner({ indicator: 'timer' })
+    s.start(startMessage)
+    const start = Date.now()
+    try {
+        const result = await action()
+        const elapsed = formatElapsed(Date.now() - start)
+        s.stop(`${successMessage || 'Done'} (took ${elapsed})`)
+        return result
+    } catch (error) {
+        const elapsed = formatElapsed(Date.now() - start)
+        s.error(`${failureMessage || 'Operation failed'} (after ${elapsed})`)
+        throw error
+    }
+}

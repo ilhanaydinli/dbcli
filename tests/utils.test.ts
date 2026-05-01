@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { parseConnectionUrl, parseMongoUrl } from '@/helpers/utils'
+import { formatElapsed, parseConnectionUrl, parseMongoUrl } from '@/helpers/utils'
 import {
     DbNameSchema,
     FilenameSchema,
@@ -207,5 +207,31 @@ describe('PortSchema', () => {
         expect(zodValidate(PortSchema, '-1')).toBe('Port must be valid')
         expect(zodValidate(PortSchema, '65536')).toBe('Port must be valid')
         expect(zodValidate(PortSchema, 'abc')).toBeDefined()
+    })
+})
+
+describe('formatElapsed', () => {
+    it('uses ms under one second', () => {
+        expect(formatElapsed(0)).toBe('0ms')
+        expect(formatElapsed(500)).toBe('500ms')
+        expect(formatElapsed(999)).toBe('999ms')
+    })
+
+    it('uses seconds under one minute', () => {
+        expect(formatElapsed(1000)).toBe('1s')
+        expect(formatElapsed(45_000)).toBe('45s')
+        expect(formatElapsed(59_999)).toBe('59s')
+    })
+
+    it('uses minutes (with optional seconds) under one hour', () => {
+        expect(formatElapsed(60_000)).toBe('1m')
+        expect(formatElapsed(65_000)).toBe('1m 5s')
+        expect(formatElapsed(3_599_000)).toBe('59m 59s')
+    })
+
+    it('uses hours and minutes for long durations', () => {
+        expect(formatElapsed(3_600_000)).toBe('1h')
+        expect(formatElapsed(3_660_000)).toBe('1h 1m')
+        expect(formatElapsed(7_500_000)).toBe('2h 5m')
     })
 })
