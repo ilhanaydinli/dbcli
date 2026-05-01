@@ -12,8 +12,12 @@ export enum MainMenuAction {
 }
 
 export enum ConnectionMenuAction {
-    Add = 'add',
-    AddFromUrl = 'add_from_url',
+    Add = '__add__',
+    AddFromUrl = '__add_from_url__',
+    Back = '__back__',
+}
+
+export enum ConnectionItemAction {
     Edit = 'edit',
     UpdatePassword = 'update_password',
     Remove = 'remove',
@@ -40,7 +44,5 @@ export enum SettingsMenuAction {
 }
 
 export enum LocaleMenuAction {
-    Search = '__search__',
-    ClearSearch = '__clear_search__',
     Default = '__default__',
 }
