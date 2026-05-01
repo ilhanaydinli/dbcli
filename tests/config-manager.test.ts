@@ -6,7 +6,7 @@ import { join } from 'path'
 import { decrypt, encrypt } from '@/helpers/crypto'
 import type { DbConfig } from '@/interfaces'
 import { DbType } from '@/interfaces'
-import { DbConfigSchema } from '@/interfaces'
+import { ConfigFileSchema, DbConfigSchema, PreferencesSchema } from '@/interfaces'
 
 const testConfigPath = join(tmpdir(), '.db-cli-test-config.json')
 const testExportPath = join(tmpdir(), 'db-cli-export-test.json')
@@ -140,6 +140,51 @@ describe('Config File Operations', () => {
         }
 
         expect(configs[1].name).toBe('Updated Second')
+    })
+})
+
+describe('ConfigFileSchema migration and preferences', () => {
+    it('accepts new shape with connections + preferences', () => {
+        const data = {
+            connections: [createTestConfig()],
+            preferences: { lastDbDumpDir: '/tmp/dumps' },
+        }
+        const result = ConfigFileSchema.safeParse(data)
+        expect(result.success).toBe(true)
+        if (result.success) {
+            expect(result.data.preferences.lastDbDumpDir).toBe('/tmp/dumps')
+        }
+    })
+
+    it('defaults preferences to empty object when missing', () => {
+        const data = { connections: [createTestConfig()] }
+        const result = ConfigFileSchema.parse(data)
+        expect(result.preferences).toEqual({})
+    })
+
+    it('migrates legacy array shape via normalization', () => {
+        const legacy = [createTestConfig()]
+        const normalized = Array.isArray(legacy) ? { connections: legacy } : legacy
+        const result = ConfigFileSchema.parse(normalized)
+        expect(result.connections).toHaveLength(1)
+        expect(result.preferences).toEqual({})
+    })
+
+    it('rejects unknown preference keys', () => {
+        const data = {
+            connections: [],
+            preferences: { lastDbDumpDir: '/tmp', bogus: 'value' },
+        }
+        const result = ConfigFileSchema.safeParse(data)
+        expect(result.success).toBe(false)
+    })
+
+    it('PreferencesSchema accepts both keys independently', () => {
+        expect(PreferencesSchema.parse({})).toEqual({})
+        expect(PreferencesSchema.parse({ lastDbDumpDir: '/a' })).toEqual({ lastDbDumpDir: '/a' })
+        expect(PreferencesSchema.parse({ lastConnectionConfigDir: '/b' })).toEqual({
+            lastConnectionConfigDir: '/b',
+        })
     })
 })
 

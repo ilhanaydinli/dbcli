@@ -1,7 +1,8 @@
 import { confirm, isCancel, password, select, text } from '@clack/prompts'
-import { readdir, stat } from 'fs/promises'
-import { join } from 'path'
+import { existsSync } from 'fs'
+import { dirname, join } from 'path'
 
+import { selectPath } from '@/cli/prompts'
 import { SettingsMenuAction } from '@/cli/types'
 import { ConfigManager } from '@/core/config-manager'
 import { EncryptedFileError } from '@/helpers/crypto'
@@ -67,6 +68,15 @@ async function handleExportConfig(): Promise<void> {
         return
     }
 
+    const dirChoice = await selectPath({
+        message: 'Select output directory',
+        mode: 'directory',
+        initialDir: configManager.getPreference('lastConnectionConfigDir') ?? process.cwd(),
+    })
+    if (isCancel(dirChoice)) return
+    const outDir = dirChoice as string
+    configManager.setPreference('lastConnectionConfigDir', outDir)
+
     const filename = await text({
         message: 'Export filename',
         placeholder: 'db-cli-connections.json',
@@ -78,9 +88,20 @@ async function handleExportConfig(): Promise<void> {
     const encryptSettings = await getEncryptionSettings()
     if (!encryptSettings) return
 
-    const finalPath = encryptSettings.encrypt
-        ? ensureEncExtension(filename as string)
-        : (filename as string)
+    const fullPath = join(outDir, filename as string)
+    const finalPath = encryptSettings.encrypt ? ensureEncExtension(fullPath) : fullPath
+
+    if (existsSync(finalPath)) {
+        const overwrite = await confirm({
+            message: `File '${finalPath}' already exists. Overwrite?`,
+            initialValue: false,
+        })
+
+        if (isCancel(overwrite) || !overwrite) {
+            logWarn('Export cancelled.')
+            return
+        }
+    }
 
     configManager.exportToFile(finalPath, encryptSettings.password, encryptSettings.includePlain)
 
@@ -88,35 +109,22 @@ async function handleExportConfig(): Promise<void> {
 }
 
 async function handleImportConfig(): Promise<void> {
-    const cwd = process.cwd()
-    const allFiles = (await readdir(cwd)).filter((f) => f.endsWith('.json') || f.endsWith('.enc'))
-
-    if (allFiles.length === 0) {
-        logWarn('No config files (.json or .enc) found in current directory.')
-        return
-    }
-
-    const filesWithStats = await Promise.all(
-        allFiles.map(async (f) => {
-            const s = await stat(join(cwd, f))
-            return { name: f, mtimeMs: s.mtimeMs }
-        }),
-    )
-
-    const files = filesWithStats.sort((a, b) => b.mtimeMs - a.mtimeMs).map((f) => f.name)
-
-    const filePath = await select({
+    const fileChoice = await selectPath({
         message: 'Select config file to import',
-        options: files.map((f) => ({ label: f, value: f })),
+        mode: 'file',
+        initialDir: configManager.getPreference('lastConnectionConfigDir') ?? process.cwd(),
+        extensions: ['.json', '.enc'],
     })
-    if (isCancel(filePath)) return
+    if (isCancel(fileChoice)) return
+    const filePath = fileChoice as string
+    configManager.setPreference('lastConnectionConfigDir', dirname(filePath))
 
     try {
-        const imported = await configManager.importFromFile(filePath as string)
+        const imported = await configManager.importFromFile(filePath)
         logImportSuccess(imported)
     } catch (error) {
         if (isEncryptedError(error)) {
-            await handleEncryptedImport(filePath as string)
+            await handleEncryptedImport(filePath)
         } else {
             logError(`Import failed: ${(error as Error).message}`)
         }

@@ -6,15 +6,16 @@ import { z } from 'zod'
 import { decrypt, encrypt, EncryptedFileError } from '@/helpers/crypto'
 import { KeychainHelper } from '@/helpers/keychain'
 import { logError } from '@/helpers/utils'
-import type { DbConfig } from '@/interfaces'
-import { DbConfigSchema } from '@/interfaces'
+import type { DbConfig, Preferences } from '@/interfaces'
+import { ConfigFileSchema, DbConfigSchema, PreferencesSchema } from '@/interfaces'
 
-const ConfigFileSchema = z.array(DbConfigSchema)
+const ExportConnectionsSchema = z.array(DbConfigSchema)
 
 export class ConfigManager {
     private static instance: ConfigManager
     private configPath: string
     private configs: DbConfig[] = []
+    private preferences: Preferences = {}
 
     private constructor() {
         this.configPath = join(homedir(), '.db-cli-config.json')
@@ -40,10 +41,14 @@ export class ConfigManager {
         try {
             const fileContent = readFileSync(this.configPath, 'utf-8')
             const parsed = JSON.parse(fileContent)
-            this.configs = ConfigFileSchema.parse(parsed)
+            const normalized = Array.isArray(parsed) ? { connections: parsed } : parsed
+            const result = ConfigFileSchema.parse(normalized)
+            this.configs = result.connections
+            this.preferences = result.preferences
         } catch (error) {
             logError(`Error loading config: ${error}`)
             this.configs = []
+            this.preferences = {}
         }
     }
 
@@ -58,17 +63,31 @@ export class ConfigManager {
 
     private saveConfigRaw(): void {
         try {
-            const configsWithoutPasswords = this.configs.map((c) => ({
+            const connections = this.configs.map((c) => ({
                 ...c,
                 password: '',
             }))
 
-            writeFileSync(this.configPath, JSON.stringify(configsWithoutPasswords, null, 2), {
+            const fileData = {
+                connections,
+                preferences: this.preferences,
+            }
+
+            writeFileSync(this.configPath, JSON.stringify(fileData, null, 2), {
                 mode: 0o600,
             })
         } catch (error) {
             logError(`Error saving config: ${error}`)
         }
+    }
+
+    public getPreference<K extends keyof Preferences>(key: K): Preferences[K] {
+        return this.preferences[key]
+    }
+
+    public setPreference<K extends keyof Preferences>(key: K, value: Preferences[K]): void {
+        this.preferences = PreferencesSchema.parse({ ...this.preferences, [key]: value })
+        this.saveConfigRaw()
     }
 
     public getConfigs(): DbConfig[] {
@@ -164,7 +183,7 @@ export class ConfigManager {
         }
 
         const connections = parsed.connections || parsed
-        const validated = ConfigFileSchema.parse(connections)
+        const validated = ExportConnectionsSchema.parse(connections)
 
         let imported = 0
         for (const config of validated) {
