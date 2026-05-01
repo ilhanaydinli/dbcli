@@ -27,6 +27,20 @@ export const DbConfigSchema = z.object({
 
 export type DbConfig = z.infer<typeof DbConfigSchema>
 
+export const PreferencesSchema = z
+    .object({
+        lastDbDumpDir: z.string().optional(),
+        lastConnectionConfigDir: z.string().optional(),
+    })
+    .strict()
+
+export type Preferences = z.infer<typeof PreferencesSchema>
+
+export const ConfigFileSchema = z.object({
+    connections: z.array(DbConfigSchema),
+    preferences: PreferencesSchema.default({}),
+})
+
 export interface ImportOptions {
     reset?: boolean
 }

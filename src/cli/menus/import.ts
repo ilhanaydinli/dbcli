@@ -1,18 +1,20 @@
 import { isCancel, select, text } from '@clack/prompts'
-import { readdir, stat } from 'fs/promises'
-import { join } from 'path'
+import { dirname } from 'path'
 
 import { AdapterFactory } from '@/adapters/adapter-factory'
-import { fetchDatabaseList, selectConfig, selectLocale, selectWithSearch } from '@/cli/prompts'
 import {
-    formatFileSize,
-    formatRelativeTime,
-    logSuccess,
-    logWarn,
-    withSpinner,
-} from '@/helpers/utils'
+    fetchDatabaseList,
+    selectConfig,
+    selectLocale,
+    selectPath,
+    selectWithSearch,
+} from '@/cli/prompts'
+import { ConfigManager } from '@/core/config-manager'
+import { logSuccess, withSpinner } from '@/helpers/utils'
 import { DbType } from '@/interfaces'
 import { DbNameSchema, zodValidate } from '@/validations'
+
+const configManager = ConfigManager.getInstance()
 
 export async function showImportMenu(): Promise<void> {
     const config = await selectConfig()
@@ -63,37 +65,15 @@ export async function showImportMenu(): Promise<void> {
     }
     const allowedExtensions = extensionsMap[targetConfig.type] || []
 
-    const cwd = process.cwd()
-    const allFiles = (await readdir(cwd)).filter((f) =>
-        allowedExtensions.some((ext) => f.endsWith(ext)),
-    )
-
-    const filesWithStats = await Promise.all(
-        allFiles.map(async (f) => {
-            const s = await stat(join(cwd, f))
-            return { name: f, size: s.size, mtimeMs: s.mtimeMs }
-        }),
-    )
-
-    const sortedFiles = filesWithStats.sort((a, b) => b.mtimeMs - a.mtimeMs)
-
-    if (sortedFiles.length === 0) {
-        logWarn(
-            `No files found for ${targetConfig.type} (${allowedExtensions.join(', ')}) in current directory.`,
-        )
-        return
-    }
-
-    const fileResponse = await select({
+    const fileChoice = await selectPath({
         message: 'Select file to import',
-        options: sortedFiles.map((f) => ({
-            label: f.name,
-            value: f.name,
-            hint: `${formatFileSize(f.size)} - ${formatRelativeTime(f.mtimeMs)}`,
-        })),
+        mode: 'file',
+        initialDir: configManager.getPreference('lastDbDumpDir') ?? process.cwd(),
+        extensions: allowedExtensions,
     })
-
-    if (isCancel(fileResponse)) return
+    if (isCancel(fileChoice)) return
+    const filePath = fileChoice as string
+    configManager.setPreference('lastDbDumpDir', dirname(filePath))
 
     const resetResponse = await select({
         message: `Do you want to reset the database '${targetConfig.database}' before importing? (This will delete all existing data)`,
@@ -108,7 +88,7 @@ export async function showImportMenu(): Promise<void> {
 
     await withSpinner(
         `Importing into '${targetConfig.database}'...`,
-        () => targetAdapter.import(fileResponse as string, { reset: resetResponse as boolean }),
+        () => targetAdapter.import(filePath, { reset: resetResponse as boolean }),
         'Import completed successfully!',
         'Import failed.',
     )

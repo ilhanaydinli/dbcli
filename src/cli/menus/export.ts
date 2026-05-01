@@ -1,11 +1,15 @@
 import { confirm, isCancel, text } from '@clack/prompts'
 import { existsSync } from 'fs'
+import { join } from 'path'
 
 import { AdapterFactory } from '@/adapters/adapter-factory'
-import { fetchDatabaseList, selectConfig, selectWithSearch } from '@/cli/prompts'
+import { fetchDatabaseList, selectConfig, selectPath, selectWithSearch } from '@/cli/prompts'
+import { ConfigManager } from '@/core/config-manager'
 import { logWarn, withSpinner } from '@/helpers/utils'
 import { DbType } from '@/interfaces'
 import { FilenameSchema, zodValidate } from '@/validations'
+
+const configManager = ConfigManager.getInstance()
 
 export async function showExportMenu(): Promise<void> {
     const config = await selectConfig()
@@ -28,6 +32,15 @@ export async function showExportMenu(): Promise<void> {
     const targetConfig = { ...config, database: database as string }
     const targetAdapter = AdapterFactory.createAdapter(targetConfig)
 
+    const dirChoice = await selectPath({
+        message: 'Select output directory',
+        mode: 'directory',
+        initialDir: configManager.getPreference('lastDbDumpDir') ?? process.cwd(),
+    })
+    if (isCancel(dirChoice)) return
+    const outDir = dirChoice as string
+    configManager.setPreference('lastDbDumpDir', outDir)
+
     const ext = targetConfig.type === DbType.MongoDB ? 'archive' : 'sql'
     const filename = await text({
         message: `Output filename (default: dump_YYYYMMDD.${ext})`,
@@ -37,9 +50,11 @@ export async function showExportMenu(): Promise<void> {
 
     if (isCancel(filename)) return
 
-    if (existsSync(filename as string)) {
+    const fullPath = join(outDir, filename as string)
+
+    if (existsSync(fullPath)) {
         const overwrite = await confirm({
-            message: `File '${filename}' already exists. Overwrite?`,
+            message: `File '${fullPath}' already exists. Overwrite?`,
             initialValue: false,
         })
 
@@ -51,7 +66,7 @@ export async function showExportMenu(): Promise<void> {
 
     await withSpinner(
         `Exporting database '${targetConfig.database}'...`,
-        () => targetAdapter.export(filename as string),
-        `Export completed successfully to ${filename}`,
+        () => targetAdapter.export(fullPath),
+        `Export completed successfully to ${fullPath}`,
     )
 }
