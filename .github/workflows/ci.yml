@@ -19,21 +19,8 @@ jobs:
             - name: Checkout
               uses: actions/checkout@v5
 
-            - name: Setup Bun
-              uses: oven-sh/setup-bun@v2.2.0
-              with:
-                  bun-version: latest
-
-            - name: Cache dependencies
-              if: ${{ !env.ACT }}
-              uses: actions/cache@v5
-              with:
-                  path: ~/.bun/install/cache
-                  key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-                  restore-keys: ${{ runner.os }}-bun-
-
-            - name: Install dependencies
-              run: bun install --frozen-lockfile
+            - name: Setup
+              uses: ./.github/actions/setup-bun
 
             - name: Quality checks (parallel)
               shell: bash
@@ -60,13 +47,27 @@ jobs:
 
                   exit $FAIL
 
-    test:
-        name: Integration Tests
+    test-unit:
+        name: Unit Tests
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Setup
+              uses: ./.github/actions/setup-bun
+
+            - name: Run unit tests
+              run: bun test tests/config-manager.test.ts tests/crypto.test.ts tests/utils.test.ts
+
+    test-postgres:
+        name: PostgreSQL 18 Tests
         runs-on: ubuntu-latest
 
         services:
             postgres:
-                image: postgres:17-alpine
+                image: postgres:18-alpine
                 env:
                     POSTGRES_USER: postgres
                     POSTGRES_PASSWORD: postgres
@@ -78,17 +79,33 @@ jobs:
                     --health-interval=10s
                     --health-timeout=5s
                     --health-retries=5
-            mongodb:
-                image: mongo:8.0
-                ports:
-                    - 27017:27017
-                options: >-
-                    --health-cmd="mongosh --eval 'db.runCommand({ ping: 1 })'"
-                    --health-interval=10s
-                    --health-timeout=5s
-                    --health-retries=5
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Install PostgreSQL client
+              shell: bash
+              run: |
+                  set -e
+                  sudo apt-get update -qq
+                  sudo apt-get install -y -qq postgresql-common
+                  sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+                  sudo apt-get install -y -qq --no-install-recommends postgresql-client-18
+
+            - name: Setup
+              uses: ./.github/actions/setup-bun
+
+            - name: Run PostgreSQL tests
+              run: bun test tests/postgres-adapter.integration.test.ts
+
+    test-mysql:
+        name: MySQL 8.4 Tests
+        runs-on: ubuntu-latest
+
+        services:
             mysql:
-                image: mysql:8
+                image: mysql:8.4
                 env:
                     MYSQL_ROOT_PASSWORD: mysql
                     MYSQL_DATABASE: testdb
@@ -99,6 +116,65 @@ jobs:
                     --health-interval=10s
                     --health-timeout=5s
                     --health-retries=10
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Install MySQL client
+              shell: bash
+              run: |
+                  set -e
+                  sudo apt-get update -qq
+                  sudo apt-get install -y -qq --no-install-recommends mysql-client
+
+            - name: Setup
+              uses: ./.github/actions/setup-bun
+
+            - name: Run MySQL tests
+              run: bun test tests/mysql-adapter.integration.test.ts
+
+    test-mongodb:
+        name: MongoDB 8 Tests
+        runs-on: ubuntu-latest
+
+        services:
+            mongodb:
+                image: mongo:8
+                ports:
+                    - 27017:27017
+                options: >-
+                    --health-cmd="mongosh --eval 'db.runCommand({ ping: 1 })'"
+                    --health-interval=10s
+                    --health-timeout=5s
+                    --health-retries=5
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Install MongoDB tools
+              shell: bash
+              run: |
+                  set -e
+                  curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc \
+                    | sudo gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg
+                  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" \
+                    | sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
+                  sudo apt-get update -qq
+                  sudo apt-get install -y -qq --no-install-recommends mongodb-mongosh mongodb-database-tools
+
+            - name: Setup
+              uses: ./.github/actions/setup-bun
+
+            - name: Run MongoDB tests
+              run: bun test tests/mongodb-adapter.integration.test.ts
+
+    test-mssql-2022:
+        name: MSSQL 2022 Tests
+        runs-on: ubuntu-latest
+
+        services:
             mssql:
                 image: mcr.microsoft.com/mssql/server:2022-latest
                 env:
@@ -117,46 +193,14 @@ jobs:
             - name: Checkout
               uses: actions/checkout@v5
 
-            - name: Install DB client tools
-              shell: bash
-              run: |
-                  set -e
-                  curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc \
-                    | sudo gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg
-                  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" \
-                    | sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
+            - name: Setup
+              uses: ./.github/actions/setup-bun
 
-                  sudo apt-get update -qq
-                  sudo apt-get install -y -qq postgresql-common
-                  sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-
-                  sudo apt-get install -y -qq --no-install-recommends \
-                    postgresql-client-17 \
-                    mongodb-mongosh \
-                    mongodb-database-tools \
-                    mysql-client
-
-            - name: Setup Bun
-              uses: oven-sh/setup-bun@v2.2.0
-              with:
-                  bun-version: latest
-
-            - name: Cache dependencies
-              if: ${{ !env.ACT }}
-              uses: actions/cache@v5
-              with:
-                  path: ~/.bun/install/cache
-                  key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-                  restore-keys: ${{ runner.os }}-bun-
-
-            - name: Install dependencies
-              run: bun install --frozen-lockfile
-
-            - name: Run tests
-              run: bun test
+            - name: Run MSSQL tests against 2022
+              run: bun test tests/mssql-adapter.integration.test.ts
 
     test-mssql-2017:
-        name: MSSQL 2017 Compatibility
+        name: MSSQL 2017 Tests
         runs-on: ubuntu-latest
 
         services:
@@ -178,21 +222,8 @@ jobs:
             - name: Checkout
               uses: actions/checkout@v5
 
-            - name: Setup Bun
-              uses: oven-sh/setup-bun@v2.2.0
-              with:
-                  bun-version: latest
-
-            - name: Cache dependencies
-              if: ${{ !env.ACT }}
-              uses: actions/cache@v5
-              with:
-                  path: ~/.bun/install/cache
-                  key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-                  restore-keys: ${{ runner.os }}-bun-
-
-            - name: Install dependencies
-              run: bun install --frozen-lockfile
+            - name: Setup
+              uses: ./.github/actions/setup-bun
 
             - name: Run MSSQL tests against 2017
               run: bun test tests/mssql-adapter.integration.test.ts
