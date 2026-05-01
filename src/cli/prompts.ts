@@ -1,4 +1,4 @@
-import { isCancel, select, text } from '@clack/prompts'
+import { autocomplete, isCancel, type Option } from '@clack/prompts'
 
 import { LocaleMenuAction } from '@/cli/types'
 import { ConfigManager } from '@/core/config-manager'
@@ -8,7 +8,48 @@ import type { DatabaseAdapter, DatabaseInfo, DbConfig } from '@/interfaces'
 
 const configManager = ConfigManager.getInstance()
 
-export function ensureConnectionsExist(): DbConfig[] {
+type Primitive = string | boolean | number
+
+type SelectSearchOption<T extends Primitive> = { label: string; value: T; hint?: string }
+
+type SelectSearchOptions<T extends Primitive> = {
+    message: string
+    items: SelectSearchOption<T>[]
+    pinnedTop?: SelectSearchOption<T>[]
+    pinnedBottom?: SelectSearchOption<T>[]
+    initialValue?: T
+    placeholder?: string
+    maxItems?: number
+}
+
+export function selectWithSearch<T extends Primitive>(
+    opts: SelectSearchOptions<T>,
+): Promise<T | symbol> {
+    const pinnedTop = opts.pinnedTop ?? []
+    const pinnedBottom = opts.pinnedBottom ?? []
+    const pinnedValues = new Set<unknown>([
+        ...pinnedTop.map((o) => o.value),
+        ...pinnedBottom.map((o) => o.value),
+    ])
+
+    return autocomplete<T>({
+        message: opts.message,
+        options: [...pinnedTop, ...opts.items, ...pinnedBottom] as Option<T>[],
+        initialValue: opts.initialValue,
+        placeholder: opts.placeholder ?? 'Type to search...',
+        maxItems: opts.maxItems ?? 10,
+        filter: (search, option) => {
+            if (pinnedValues.has(option.value)) return true
+            const term = search.toLowerCase()
+            const label = String(option.label ?? '').toLowerCase()
+            const hint = String(option.hint ?? '').toLowerCase()
+            const value = String(option.value ?? '').toLowerCase()
+            return label.includes(term) || hint.includes(term) || value.includes(term)
+        },
+    })
+}
+
+function ensureConnectionsExist(): DbConfig[] {
     const configs = configManager.getConfigs()
     if (configs.length === 0) {
         throw new ConfigError('No saved database connections found. Please add one first.')
@@ -25,9 +66,9 @@ export async function selectConfig(): Promise<DbConfig> {
         return config
     }
 
-    const id = await select({
+    const id = await selectWithSearch<string>({
         message: 'Select Database Connection',
-        options: configs.map((c: DbConfig) => ({
+        items: configs.map((c: DbConfig) => ({
             label: formatConnectionLabel(c),
             value: c.id,
             hint: c.group,
@@ -67,88 +108,24 @@ export async function selectLocale(
     const locales = localeResult.locales
     const serverDefault = localeResult.default
 
-    let selectedLocale: string | undefined = undefined
-
-    if (locales.length > 0) {
-        let currentLocales = locales
-        let searchMode = false
-        let lastSearchTerm = ''
-
-        while (true) {
-            const localeOptions = []
-
-            if (searchMode) {
-                localeOptions.push({
-                    label: `🔍 Modify Search (Current: "${lastSearchTerm}")`,
-                    value: LocaleMenuAction.Search,
-                })
-                localeOptions.push({
-                    label: '❌ Clear Search',
-                    value: LocaleMenuAction.ClearSearch,
-                })
-            } else {
-                localeOptions.push({
-                    label: '🔍 Search Locale...',
-                    value: LocaleMenuAction.Search,
-                })
-                localeOptions.push({
-                    label: `Default (Server: ${serverDefault})`,
-                    value: LocaleMenuAction.Default,
-                })
-            }
-
-            localeOptions.push(...currentLocales.map((l) => ({ label: l, value: l })))
-
-            const message = searchMode
-                ? `Select Locale (Found ${currentLocales.length} results for "${lastSearchTerm}")`
-                : 'Select Database Locale (Encoding: UTF8)'
-
-            const localeSelection = await select({
-                message,
-                options: localeOptions,
-                initialValue: searchMode
-                    ? currentLocales[0] || LocaleMenuAction.Search
-                    : LocaleMenuAction.Default,
-            })
-
-            if (isCancel(localeSelection)) return null
-
-            if (localeSelection === LocaleMenuAction.ClearSearch) {
-                currentLocales = locales
-                searchMode = false
-                lastSearchTerm = ''
-                continue
-            }
-
-            if (localeSelection === LocaleMenuAction.Search) {
-                const searchTerm = await text({
-                    message: 'Enter search term (case-insensitive):',
-                    placeholder: 'e.g. tr_TR, utf8',
-                    initialValue: lastSearchTerm,
-                })
-
-                if (isCancel(searchTerm)) continue
-
-                const term = String(searchTerm).trim().toLowerCase()
-
-                if (!term) {
-                    currentLocales = locales
-                    searchMode = false
-                    lastSearchTerm = ''
-                } else {
-                    currentLocales = locales.filter((l) => l.toLowerCase().includes(term))
-                    searchMode = true
-                    lastSearchTerm = String(searchTerm).trim()
-                }
-                continue
-            }
-
-            if (localeSelection !== LocaleMenuAction.Default) {
-                selectedLocale = localeSelection as string
-            }
-            break
-        }
+    if (locales.length === 0) {
+        return { locale: undefined, serverDefault }
     }
 
-    return { locale: selectedLocale, serverDefault }
+    const selection = await selectWithSearch<string>({
+        message: 'Select Database Locale (Encoding: UTF8)',
+        pinnedTop: [
+            {
+                label: `Default (Server: ${serverDefault})`,
+                value: LocaleMenuAction.Default,
+            },
+        ],
+        items: locales.map((l) => ({ label: l, value: l })),
+        initialValue: LocaleMenuAction.Default,
+    })
+
+    if (isCancel(selection)) return null
+
+    const locale = selection === LocaleMenuAction.Default ? undefined : (selection as string)
+    return { locale, serverDefault }
 }

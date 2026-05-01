@@ -2,14 +2,13 @@ import { confirm, isCancel, password, select, spinner, text } from '@clack/promp
 import { randomUUID } from 'crypto'
 
 import { AdapterFactory } from '@/adapters/adapter-factory'
-import { ensureConnectionsExist } from '@/cli/prompts'
+import { showConnectionActionMenu } from '@/cli/menus/connection-actions'
+import { selectWithSearch } from '@/cli/prompts'
 import { ConnectionMenuAction } from '@/cli/types'
 import { ConfigManager } from '@/core/config-manager'
 import {
     formatConnectionLabel,
-    logError,
     logSuccess,
-    logWarn,
     parseConnectionUrl,
     parseMongoUrl,
     parseMSSQLUrl,
@@ -31,37 +30,37 @@ const configManager = ConfigManager.getInstance()
 
 export async function showConnectionMenu(): Promise<void> {
     while (true) {
-        const value = await select({
+        const configs = configManager.getConfigs()
+
+        const value = await selectWithSearch<string>({
             message: 'Manage Connections',
-            options: [
-                { label: 'Add Connection', value: ConnectionMenuAction.Add },
+            pinnedTop: [
+                { label: '+ Add Connection', value: ConnectionMenuAction.Add },
                 {
-                    label: 'Add from URL',
+                    label: '+ Add from URL',
                     value: ConnectionMenuAction.AddFromUrl,
                     hint: 'postgresql://, mongodb://, mysql://, mssql://',
                 },
-                { label: 'Edit Connection', value: ConnectionMenuAction.Edit },
-                { label: 'Update Password', value: ConnectionMenuAction.UpdatePassword },
-                { label: 'Remove Connection', value: ConnectionMenuAction.Remove },
-                { label: '← Back', value: ConnectionMenuAction.Back },
             ],
+            items: configs.map((c) => ({
+                label: formatConnectionLabel(c),
+                value: c.id,
+                hint: c.group,
+            })),
+            pinnedBottom: [{ label: '← Back', value: ConnectionMenuAction.Back }],
         })
 
         if (isCancel(value) || value === ConnectionMenuAction.Back) return
 
-        const handler = menuActions[value as ConnectionMenuAction]
-        if (handler) {
-            await handler()
+        if (value === ConnectionMenuAction.Add) {
+            await addConnection()
+        } else if (value === ConnectionMenuAction.AddFromUrl) {
+            await addConnectionFromUrl()
+        } else {
+            const config = configManager.getConfig(value as string)
+            if (config) await showConnectionActionMenu(config)
         }
     }
-}
-
-const menuActions: Partial<Record<ConnectionMenuAction, () => void | Promise<void>>> = {
-    [ConnectionMenuAction.Add]: addConnection,
-    [ConnectionMenuAction.AddFromUrl]: addConnectionFromUrl,
-    [ConnectionMenuAction.Edit]: editConnection,
-    [ConnectionMenuAction.UpdatePassword]: updatePassword,
-    [ConnectionMenuAction.Remove]: removeConnection,
 }
 
 async function addConnectionFromUrl(): Promise<void> {
@@ -137,7 +136,7 @@ async function addConnectionFromUrl(): Promise<void> {
     }
 }
 
-async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
+export async function addConnection(initialValues?: Partial<DbConfig>): Promise<void> {
     const name = await text({
         message: 'Connection Name (e.g. Local Postgres)',
         initialValue: initialValues?.name,
@@ -502,80 +501,6 @@ async function testAndSaveConfig(config: DbConfig, retryFn: () => Promise<void>)
             logSuccess('Connection added (unverified).')
         }
     }
-}
-
-async function editConnection(): Promise<void> {
-    const configs = ensureConnectionsExist()
-
-    const id = await select({
-        message: 'Select connection to edit',
-        options: configs.map((c: DbConfig) => ({ label: formatConnectionLabel(c), value: c.id })),
-    })
-
-    if (isCancel(id)) {
-        logWarn('Operation cancelled.')
-        return
-    }
-
-    const existingConfig = configManager.getConfig(id as string)
-    if (!existingConfig) {
-        logError('Connection not found.')
-        return
-    }
-
-    await configManager.removeConfig(id as string)
-    await addConnection(existingConfig)
-
-    if (!configManager.getConfig(existingConfig.id)) {
-        await configManager.addConfig(existingConfig)
-    }
-}
-
-async function updatePassword(): Promise<void> {
-    const configs = ensureConnectionsExist()
-
-    const id = await select({
-        message: 'Select connection to update password',
-        options: configs.map((c: DbConfig) => ({
-            label: formatConnectionLabel(c),
-            value: c.id,
-        })),
-    })
-
-    if (isCancel(id)) return
-
-    const config = configManager.getConfig(id as string)
-    if (!config) {
-        logError('Connection not found.')
-        return
-    }
-
-    const pw = await password({
-        message: `New password for '${config.name}'`,
-    })
-
-    if (isCancel(pw)) return
-
-    config.password = (pw as string) || ''
-    await configManager.updateConfig(config)
-    logSuccess(`Password updated for '${config.name}'.`)
-}
-
-async function removeConnection(): Promise<void> {
-    const configs = ensureConnectionsExist()
-
-    const id = await select({
-        message: 'Select connection to remove',
-        options: configs.map((c: DbConfig) => ({ label: formatConnectionLabel(c), value: c.id })),
-    })
-
-    if (isCancel(id)) {
-        logWarn('Operation cancelled.')
-        return
-    }
-
-    await configManager.removeConfig(id as string)
-    logSuccess('Connection removed.')
 }
 
 async function selectGroup(currentGroup?: string): Promise<string | null> {

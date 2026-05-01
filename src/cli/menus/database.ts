@@ -1,8 +1,8 @@
-import { isCancel, select, text } from '@clack/prompts'
+import { isCancel, text } from '@clack/prompts'
 
 import { AdapterFactory } from '@/adapters/adapter-factory'
 import { showDatabaseActionMenu } from '@/cli/menus/database-actions'
-import { fetchDatabaseList, selectConfig, selectLocale } from '@/cli/prompts'
+import { fetchDatabaseList, selectConfig, selectLocale, selectWithSearch } from '@/cli/prompts'
 import { DatabaseAction } from '@/cli/types'
 import { logSuccess, withSpinner } from '@/helpers/utils'
 import type { DatabaseAdapter } from '@/interfaces'
@@ -20,17 +20,15 @@ export async function showDatabaseMenu(): Promise<void> {
             'Failed to fetch databases.',
         )
 
-        const value = await select({
+        const value = await selectWithSearch<string>({
             message: `Manage Databases @ ${config.name}`,
-            options: [
-                { label: '+ Create New Database', value: DatabaseAction.Create },
-                ...databases.map((db) => ({
-                    label: db.name,
-                    value: db.name,
-                    hint: db.size,
-                })),
-                { label: '← Back', value: DatabaseAction.Back },
-            ],
+            pinnedTop: [{ label: '+ Create New Database', value: DatabaseAction.Create }],
+            items: databases.map((db) => ({
+                label: db.name,
+                value: db.name,
+                hint: db.size,
+            })),
+            pinnedBottom: [{ label: '← Back', value: DatabaseAction.Back }],
         })
 
         if (isCancel(value) || value === DatabaseAction.Back) return

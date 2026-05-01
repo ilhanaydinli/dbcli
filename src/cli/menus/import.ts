@@ -3,7 +3,7 @@ import { readdir, stat } from 'fs/promises'
 import { join } from 'path'
 
 import { AdapterFactory } from '@/adapters/adapter-factory'
-import { fetchDatabaseList, selectConfig, selectLocale } from '@/cli/prompts'
+import { fetchDatabaseList, selectConfig, selectLocale, selectWithSearch } from '@/cli/prompts'
 import {
     formatFileSize,
     formatRelativeTime,
@@ -25,12 +25,10 @@ export async function showImportMenu(): Promise<void> {
         'Failed to fetch databases.',
     )
 
-    let targetDbName = await select({
+    let targetDbName = await selectWithSearch<string>({
         message: 'Select Target Database',
-        options: [
-            { label: '+ Create New Database', value: '__create_new__' },
-            ...databases.map((db) => ({ label: db.name, value: db.name, hint: db.size })),
-        ],
+        pinnedTop: [{ label: '+ Create New Database', value: '__create_new__' }],
+        items: databases.map((db) => ({ label: db.name, value: db.name, hint: db.size })),
     })
 
     if (isCancel(targetDbName)) return

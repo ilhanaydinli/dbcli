@@ -1,8 +1,8 @@
-import { confirm, isCancel, select, text } from '@clack/prompts'
+import { confirm, isCancel, text } from '@clack/prompts'
 import { existsSync } from 'fs'
 
 import { AdapterFactory } from '@/adapters/adapter-factory'
-import { fetchDatabaseList, selectConfig } from '@/cli/prompts'
+import { fetchDatabaseList, selectConfig, selectWithSearch } from '@/cli/prompts'
 import { logWarn, withSpinner } from '@/helpers/utils'
 import { DbType } from '@/interfaces'
 import { FilenameSchema, zodValidate } from '@/validations'
@@ -18,9 +18,9 @@ export async function showExportMenu(): Promise<void> {
         'Failed to fetch databases.',
     )
 
-    const database = await select({
+    const database = await selectWithSearch<string>({
         message: 'Select Database to Export',
-        options: databases.map((db) => ({ label: db.name, value: db.name, hint: db.size })),
+        items: databases.map((db) => ({ label: db.name, value: db.name, hint: db.size })),
     })
 
     if (isCancel(database)) return
