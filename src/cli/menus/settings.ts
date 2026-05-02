@@ -1,4 +1,4 @@
-import { confirm, isCancel, password, select, text } from '@clack/prompts'
+import { confirm, isCancel, note, password, select, text } from '@clack/prompts'
 import { existsSync } from 'fs'
 import { dirname, join } from 'path'
 
@@ -14,10 +14,17 @@ const configManager = ConfigManager.getInstance()
 
 export async function showSettingsMenu(): Promise<void> {
     while (true) {
+        const fastImportOn = configManager.getPreference('fastImport') ?? false
+        const skipIdxOn = configManager.getPreference('skipIndexes') ?? false
+        const fastLabel = `Toggle Fast Import Mode (LOCAL PostgreSQL only — dangerous) — currently ${fastImportOn ? 'ON' : 'OFF'}`
+        const skipIdxLabel = `Toggle Skip Indexes (LOCAL PG + Fast Import Mode only) — currently ${skipIdxOn ? 'ON' : 'OFF'}`
+
         const action = await select({
             message: 'Settings',
             options: [
                 { label: 'Toggle Verbose Mode', value: SettingsMenuAction.ToggleVerbose },
+                { label: fastLabel, value: SettingsMenuAction.ToggleFastImport },
+                { label: skipIdxLabel, value: SettingsMenuAction.ToggleSkipIndexes },
                 { label: 'Export Connections', value: SettingsMenuAction.ExportConfig },
                 { label: 'Import Connections', value: SettingsMenuAction.ImportConfig },
                 { label: '← Back', value: SettingsMenuAction.Back },
@@ -35,6 +42,8 @@ export async function showSettingsMenu(): Promise<void> {
 
 const menuActions: Partial<Record<SettingsMenuAction, () => Promise<void>>> = {
     [SettingsMenuAction.ToggleVerbose]: handleToggleVerbose,
+    [SettingsMenuAction.ToggleFastImport]: handleToggleFastImport,
+    [SettingsMenuAction.ToggleSkipIndexes]: handleToggleSkipIndexes,
     [SettingsMenuAction.ExportConfig]: handleExportConfig,
     [SettingsMenuAction.ImportConfig]: handleImportConfig,
 }
@@ -59,6 +68,106 @@ async function handleToggleVerbose(): Promise<void> {
         }
     }
     logSuccess(`Verbose mode set to ${verbose ? 'ON' : 'OFF'}.`)
+}
+
+async function handleToggleFastImport(): Promise<void> {
+    const current = configManager.getPreference('fastImport') ?? false
+
+    if (current) {
+        const turnOff = await confirm({
+            message: 'Fast Import Mode is currently ON. Turn it off?',
+            initialValue: true,
+        })
+        if (isCancel(turnOff) || !turnOff) return
+        configManager.setPreference('fastImport', false)
+        logSuccess('Fast Import Mode turned OFF.')
+        return
+    }
+
+    note(
+        [
+            'LOCAL PostgreSQL ONLY — does NOT work with Cloud SQL, RDS,',
+            'Supabase, or any managed PG (ALTER SYSTEM is rejected there).',
+            '',
+            '  What changes during import:',
+            '  ┌─────────────────────────────┬───────────┬───────────┐',
+            '  │ Setting                     │ Normal    │ Fast Mode │',
+            '  ├─────────────────────────────┼───────────┼───────────┤',
+            '  │ fsync                       │ on        │ off       │',
+            '  │ full_page_writes            │ on        │ off       │',
+            '  │ wal_level                   │ replica   │ minimal   │',
+            '  │ synchronous_commit          │ on        │ off       │',
+            '  │ autovacuum                  │ on        │ off       │',
+            '  │ max_wal_size                │ 1GB       │ 64GB      │',
+            '  │ shared_buffers              │ default   │ RAM / 4   │',
+            '  │ Import wrapped in 1 txn     │ no        │ yes       │',
+            '  │ PG restarted (×2)           │ no        │ yes       │',
+            '  └─────────────────────────────┴───────────┴───────────┘',
+            '',
+            '  ⚠ Crash during import → corrupt DB.',
+            '  ⚠ Use only on local dev / throwaway databases.',
+        ].join('\n'),
+        '⚠⚠  Fast Import Mode (LOCAL ONLY)',
+    )
+
+    const enable = await confirm({
+        message: 'Enable Fast Import Mode?',
+        initialValue: false,
+    })
+    if (isCancel(enable) || !enable) {
+        logWarn('Fast Import Mode left OFF.')
+        return
+    }
+
+    configManager.setPreference('fastImport', true)
+    logSuccess('Fast Import Mode is now ON.')
+}
+
+async function handleToggleSkipIndexes(): Promise<void> {
+    const current = configManager.getPreference('skipIndexes') ?? false
+
+    if (current) {
+        const turnOff = await confirm({
+            message: 'Skip Indexes is currently ON. Turn it off?',
+            initialValue: true,
+        })
+        if (isCancel(turnOff) || !turnOff) return
+        configManager.setPreference('skipIndexes', false)
+        logSuccess('Skip Indexes turned OFF.')
+        return
+    }
+
+    note(
+        [
+            'LOCAL PostgreSQL ONLY — requires Fast Import Mode ON to take effect.',
+            '',
+            '  What changes during import:',
+            '  ┌─────────────────────────────┬───────────┬──────────────┐',
+            '  │ Setting                     │ Normal    │ Skip Indexes │',
+            '  ├─────────────────────────────┼───────────┼──────────────┤',
+            '  │ Secondary CREATE INDEX      │ imported  │ skipped      │',
+            '  │ PRIMARY KEY index           │ imported  │ imported     │',
+            '  │ UNIQUE index                │ imported  │ imported     │',
+            '  │ Query performance after     │ normal    │ seq scans    │',
+            '  │ Import time saving          │ –         │ ~45%         │',
+            '  └─────────────────────────────┴───────────┴──────────────┘',
+            '',
+            '  ⚠ Rebuild indexes manually after import if needed.',
+        ].join('\n'),
+        '⚠  Skip Indexes (LOCAL ONLY)',
+    )
+
+    const enable = await confirm({
+        message: 'Enable Skip Indexes?',
+        initialValue: false,
+    })
+    if (isCancel(enable) || !enable) {
+        logWarn('Skip Indexes left OFF.')
+        return
+    }
+
+    configManager.setPreference('skipIndexes', true)
+    logSuccess('Skip Indexes is now ON.')
 }
 
 async function handleExportConfig(): Promise<void> {

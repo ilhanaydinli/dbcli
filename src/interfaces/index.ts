@@ -27,12 +27,12 @@ export const DbConfigSchema = z.object({
 
 export type DbConfig = z.infer<typeof DbConfigSchema>
 
-export const PreferencesSchema = z
-    .object({
-        lastDbDumpDir: z.string().optional(),
-        lastConnectionConfigDir: z.string().optional(),
-    })
-    .strict()
+export const PreferencesSchema = z.object({
+    lastDbDumpDir: z.string().optional(),
+    lastConnectionConfigDir: z.string().optional(),
+    fastImport: z.boolean().optional(),
+    skipIndexes: z.boolean().optional(),
+})
 
 export type Preferences = z.infer<typeof PreferencesSchema>
 

@@ -38,6 +38,8 @@ export enum DatabaseItemAction {
 
 export enum SettingsMenuAction {
     ToggleVerbose = 'toggle_verbose',
+    ToggleFastImport = 'toggle_fast_import',
+    ToggleSkipIndexes = 'toggle_skip_indexes',
     ExportConfig = 'export_config',
     ImportConfig = 'import_config',
     Back = 'back',

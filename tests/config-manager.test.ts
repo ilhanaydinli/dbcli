@@ -170,13 +170,17 @@ describe('ConfigFileSchema migration and preferences', () => {
         expect(result.preferences).toEqual({})
     })
 
-    it('rejects unknown preference keys', () => {
+    it('silently strips unknown preference keys (migration-friendly)', () => {
         const data = {
             connections: [],
-            preferences: { lastDbDumpDir: '/tmp', bogus: 'value' },
+            preferences: {
+                lastDbDumpDir: '/tmp',
+                speedMode: true,
+                aggressiveLocalMode: true,
+            },
         }
-        const result = ConfigFileSchema.safeParse(data)
-        expect(result.success).toBe(false)
+        const result = ConfigFileSchema.parse(data)
+        expect(result.preferences).toEqual({ lastDbDumpDir: '/tmp' })
     })
 
     it('PreferencesSchema accepts both keys independently', () => {
