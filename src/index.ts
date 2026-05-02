@@ -1,17 +1,14 @@
 #!/usr/bin/env bun
-import updateNotifier from 'update-notifier'
+import { note, outro } from '@clack/prompts'
 
 import { App } from '@/cli/app'
+import { checkForUpdate, readPendingUpdate } from '@/helpers/update-checker'
 import { logError, logInfo } from '@/helpers/utils'
 
 import pkg from '../package.json'
 
-const notifier = updateNotifier({
-    pkg,
-    updateCheckInterval: 1000 * 60 * 60 * 24 * 7, // 1 week
-})
-
-notifier.notify()
+const cachedPending = readPendingUpdate(pkg.version)
+const updatePromise = checkForUpdate(pkg.version)
 
 function setupGracefulShutdown(): void {
     const shutdown = (signal: string) => {
@@ -25,12 +22,30 @@ function setupGracefulShutdown(): void {
 
 setupGracefulShutdown()
 
-async function main(): Promise<void> {
-    const app = new App()
-    await app.run()
+function showUpdateNote(latestVersion: string): void {
+    note(
+        `${pkg.version}  →  ${latestVersion}\n\nbun install -g @ilhanaydinli/dbcli`,
+        '✨ Update available',
+    )
 }
 
-main().catch((error) => {
-    logError(`Fatal error: ${(error as Error).message}`)
-    process.exit(1)
-})
+async function main(): Promise<void> {
+    const app = new App()
+    await app.run(cachedPending ? () => showUpdateNote(cachedPending) : undefined)
+}
+
+main()
+    .then(async () => {
+        const liveUpdate = await Promise.race([
+            updatePromise,
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+        ])
+        if (liveUpdate && liveUpdate !== cachedPending) {
+            showUpdateNote(liveUpdate)
+        }
+        outro('Goodbye!')
+    })
+    .catch((error) => {
+        logError(`Fatal error: ${(error as Error).message}`)
+        process.exit(1)
+    })

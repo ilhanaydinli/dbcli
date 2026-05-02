@@ -1,4 +1,4 @@
-import { intro, isCancel, outro, select } from '@clack/prompts'
+import { intro, isCancel, select } from '@clack/prompts'
 
 import { showConnectionMenu } from '@/cli/menus/connection'
 import { showDatabaseMenu } from '@/cli/menus/database'
@@ -11,12 +11,14 @@ import { DbCliError } from '@/errors'
 import { logError, logWarn } from '@/helpers/utils'
 
 export class App {
-    async run(): Promise<void> {
+    async run(afterIntro?: () => void): Promise<void> {
         console.clear()
 
         await ConfigManager.getInstance().init()
 
         intro('DB CLI Manager')
+
+        afterIntro?.()
 
         while (true) {
             const value = await select({
@@ -52,8 +54,7 @@ export class App {
             })
 
             if (isCancel(value) || value === MainMenuAction.Exit) {
-                outro('Goodbye!')
-                process.exit(0)
+                return
             }
 
             try {
