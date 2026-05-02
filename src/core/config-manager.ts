@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { z } from 'zod'
 
 import { decrypt, encrypt, EncryptedFileError } from '@/helpers/crypto'
@@ -18,7 +18,7 @@ export class ConfigManager {
     private preferences: Preferences = {}
 
     private constructor() {
-        this.configPath = join(homedir(), '.db-cli-config.json')
+        this.configPath = join(homedir(), '.config', 'dbcli', 'config.json')
         this.loadConfigRaw()
     }
 
@@ -73,6 +73,7 @@ export class ConfigManager {
                 preferences: this.preferences,
             }
 
+            mkdirSync(dirname(this.configPath), { recursive: true })
             writeFileSync(this.configPath, JSON.stringify(fileData, null, 2), {
                 mode: 0o600,
             })

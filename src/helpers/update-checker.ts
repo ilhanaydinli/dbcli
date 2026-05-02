@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 
-const CACHE_PATH = join(homedir(), '.db-cli-update-cache.json')
+const CACHE_PATH = join(homedir(), '.config', 'dbcli', 'update-cache.json')
 
 interface UpdateCache {
     latestVersion: string
@@ -30,6 +30,7 @@ function readCache(path: string = CACHE_PATH): UpdateCache | null {
 
 function writeCache(cache: UpdateCache, path: string = CACHE_PATH): void {
     try {
+        mkdirSync(dirname(path), { recursive: true })
         writeFileSync(path, JSON.stringify(cache), 'utf-8')
     } catch {
         // silent fail
