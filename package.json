@@ -1,14 +1,16 @@
 {
     "name": "@ilhanaydinli/dbcli",
-    "version": "1.9.0",
+    "version": "1.9.1",
     "description": "A powerful, interactive CLI tool for managing database connections, imports, exports, and operations.",
     "module": "src/index.ts",
     "type": "module",
     "bin": {
-        "dbcli": "./dist/index.js"
+        "dbcli": "./bin/dbcli.cjs"
     },
     "files": [
-        "dist"
+        "dist",
+        "bin",
+        "scripts"
     ],
     "keywords": [
         "cli",
@@ -34,6 +36,7 @@
         "bun": ">=1.0.0"
     },
     "scripts": {
+        "preinstall": "node scripts/check-bun.cjs",
         "start": "bun run src/index.ts",
         "dev": "bun run --watch src/index.ts",
         "build": "bun build src/index.ts --outdir ./dist --target bun",
