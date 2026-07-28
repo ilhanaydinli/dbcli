@@ -3,8 +3,16 @@ import * as os from 'os'
 import * as path from 'path'
 
 import { AdapterError } from '@/errors'
+import { isAuthenticationFailure, resolveMongoAuthSource } from '@/helpers/mongo-auth-source'
+import { buildMongoHostUri, buildMongoUri } from '@/helpers/mongo-uri'
 import { assertValidDbName, logInfo } from '@/helpers/utils'
-import type { DatabaseAdapter, DatabaseInfo, DbConfig, ImportOptions } from '@/interfaces'
+import type {
+    AdapterHooks,
+    DatabaseAdapter,
+    DatabaseInfo,
+    DbConfig,
+    ImportOptions,
+} from '@/interfaces'
 
 const CONNECTION_TIMEOUT_MS = 10000
 const PLACEHOLDER_COLLECTION = '_init'
@@ -14,8 +22,12 @@ export class MongoDbAdapter implements DatabaseAdapter {
     private mongoshPath = 'mongosh'
     private mongodumpPath = 'mongodump'
     private mongorestorePath = 'mongorestore'
+    private authRecoveryAttempted = false
 
-    constructor(private config: DbConfig) {
+    constructor(
+        private config: DbConfig,
+        private hooks?: AdapterHooks,
+    ) {
         const mongosh = Bun.which('mongosh')
         const mongodump = Bun.which('mongodump')
         const mongorestore = Bun.which('mongorestore')
@@ -26,47 +38,60 @@ export class MongoDbAdapter implements DatabaseAdapter {
     }
 
     private getUri(dbName?: string): string {
-        if (this.config.uri) {
-            if (!dbName) return this.config.uri
-            try {
-                const url = new URL(this.config.uri)
-                url.pathname = `/${dbName}`
-                return url.toString()
-            } catch {
-                return this.config.uri
-            }
-        }
-
-        const user = this.config.user ? encodeURIComponent(this.config.user) : ''
-        const pass = this.config.password ? `:${encodeURIComponent(this.config.password)}` : ''
-        const auth = user ? `${user}${pass}@` : ''
-        const db = dbName || this.config.database || 'admin'
-        const tls = this.config.ssl ? '?tls=true' : ''
-        return `mongodb://${auth}${this.config.host}:${this.config.port}/${db}${tls}`
+        return buildMongoUri(this.config, dbName)
     }
 
     private getHostUri(): string {
-        if (this.config.uri) {
-            try {
-                const url = new URL(this.config.uri)
-                url.pathname = '/'
-                return url.toString()
-            } catch {
-                return this.config.uri
-            }
-        }
-
-        const user = this.config.user ? encodeURIComponent(this.config.user) : ''
-        const pass = this.config.password ? `:${encodeURIComponent(this.config.password)}` : ''
-        const auth = user ? `${user}${pass}@` : ''
-        const tls = this.config.ssl ? '?tls=true' : ''
-        return `mongodb://${auth}${this.config.host}:${this.config.port}/${tls}`
+        return buildMongoHostUri(this.config)
     }
 
     private verbose(message: string): void {
         if (this.config.verbose) {
             logInfo(`[MongoDB] ${message}`)
         }
+    }
+
+    private async runProcess(
+        args: string[],
+        captureStdout: boolean,
+    ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+        const proc = Bun.spawn(args, {
+            stdout: captureStdout ? 'pipe' : this.config.verbose ? 'inherit' : 'ignore',
+            stderr: 'pipe',
+        })
+
+        const [exitCode, stdout, stderr] = await Promise.all([
+            proc.exited,
+            captureStdout ? new Response(proc.stdout).text() : Promise.resolve(''),
+            new Response(proc.stderr).text(),
+        ])
+
+        return { exitCode, stdout, stderr }
+    }
+
+    private async recoverAuthSource(): Promise<string | undefined> {
+        if (this.authRecoveryAttempted) return undefined
+        this.authRecoveryAttempted = true
+
+        const authSource = await detectMongoAuthSource(this.config)
+        if (!authSource) return undefined
+
+        this.verbose(`Authentication failed, recovered using auth source '${authSource}'`)
+        this.config = { ...this.config, authSource }
+        await this.hooks?.onAuthSourceResolved?.(authSource)
+        return authSource
+    }
+
+    private async run(
+        buildArgs: () => string[],
+        captureStdout = false,
+    ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+        const result = await this.runProcess(buildArgs(), captureStdout)
+        if (result.exitCode === 0 || !isAuthenticationFailure(result.stderr)) return result
+
+        if (!(await this.recoverAuthSource())) return result
+
+        return this.runProcess(buildArgs(), captureStdout)
     }
 
     async testConnection(): Promise<boolean> {
@@ -116,22 +141,16 @@ export class MongoDbAdapter implements DatabaseAdapter {
     async listDatabases(): Promise<DatabaseInfo[]> {
         this.verbose('Fetching database list...')
 
-        const proc = Bun.spawn(
-            [
+        const { exitCode, stdout: output } = await this.run(
+            () => [
                 this.mongoshPath,
                 this.getUri('admin'),
                 '--quiet',
                 '--eval',
                 'JSON.stringify(db.adminCommand({ listDatabases: 1 }).databases.map(d => ({ name: d.name, size: d.sizeOnDisk })))',
             ],
-            {
-                stdout: 'pipe',
-                stderr: this.config.verbose ? 'inherit' : 'ignore',
-            },
+            true,
         )
-
-        const output = await new Response(proc.stdout).text()
-        const exitCode = await proc.exited
 
         if (exitCode !== 0) {
             throw new AdapterError(`Failed to list databases (exit code ${exitCode})`)
@@ -167,21 +186,14 @@ export class MongoDbAdapter implements DatabaseAdapter {
         assertValidDbName(dbName)
         this.verbose(`Creating database '${dbName}'...`)
 
-        const proc = Bun.spawn(
-            [
-                this.mongoshPath,
-                this.getUri(dbName),
-                '--quiet',
-                '--eval',
-                `db.createCollection("${PLACEHOLDER_COLLECTION}")`,
-            ],
-            {
-                stdout: this.config.verbose ? 'inherit' : 'ignore',
-                stderr: this.config.verbose ? 'inherit' : 'ignore',
-            },
-        )
+        const { exitCode } = await this.run(() => [
+            this.mongoshPath,
+            this.getUri(dbName),
+            '--quiet',
+            '--eval',
+            `db.createCollection("${PLACEHOLDER_COLLECTION}")`,
+        ])
 
-        const exitCode = await proc.exited
         if (exitCode !== 0) {
             throw new AdapterError(`Failed to create database '${dbName}' (exit code ${exitCode})`)
         }
@@ -192,15 +204,14 @@ export class MongoDbAdapter implements DatabaseAdapter {
         assertValidDbName(dbName)
         this.verbose(`Dropping database '${dbName}'...`)
 
-        const proc = Bun.spawn(
-            [this.mongoshPath, this.getUri(dbName), '--quiet', '--eval', 'db.dropDatabase()'],
-            {
-                stdout: this.config.verbose ? 'inherit' : 'ignore',
-                stderr: this.config.verbose ? 'inherit' : 'ignore',
-            },
-        )
+        const { exitCode } = await this.run(() => [
+            this.mongoshPath,
+            this.getUri(dbName),
+            '--quiet',
+            '--eval',
+            'db.dropDatabase()',
+        ])
 
-        const exitCode = await proc.exited
         if (exitCode !== 0) {
             throw new AdapterError(`Failed to drop database '${dbName}' (exit code ${exitCode})`)
         }
@@ -270,29 +281,25 @@ export class MongoDbAdapter implements DatabaseAdapter {
             )
         }
 
-        const args = [this.mongorestorePath, `--uri=${this.getHostUri()}`, `--archive=${inputFile}`]
-
         const sourceDb = sourceDbs[0] as string
-        if (sourceDbs.length === 1 && sourceDb !== targetDb) {
-            this.verbose(`Remapping namespaces '${sourceDb}.*' to '${targetDb}.*'`)
-            args.push(`--nsFrom=${sourceDb}.*`, `--nsTo=${targetDb}.*`)
-        } else {
-            args.push(`--nsInclude=${targetDb}.*`)
-        }
+        const shouldRemap = sourceDbs.length === 1 && sourceDb !== targetDb
+        const namespaceArgs = shouldRemap
+            ? [`--nsFrom=${sourceDb}.*`, `--nsTo=${targetDb}.*`]
+            : [`--nsInclude=${targetDb}.*`]
 
+        if (shouldRemap) {
+            this.verbose(`Remapping namespaces '${sourceDb}.*' to '${targetDb}.*'`)
+        }
         if (options?.reset) {
-            args.push('--drop')
             this.verbose('Drop mode enabled (--drop)')
         }
 
-        const proc = Bun.spawn(args, {
-            stdout: this.config.verbose ? 'inherit' : 'ignore',
-            stderr: 'pipe',
-        })
-
-        const [exitCode, errorOutput] = await Promise.all([
-            proc.exited,
-            new Response(proc.stderr).text(),
+        const { exitCode, stderr: errorOutput } = await this.run(() => [
+            this.mongorestorePath,
+            `--uri=${this.getHostUri()}`,
+            `--archive=${inputFile}`,
+            ...namespaceArgs,
+            ...(options?.reset ? ['--drop'] : []),
         ])
 
         if (exitCode !== 0) {
@@ -341,23 +348,12 @@ export class MongoDbAdapter implements DatabaseAdapter {
     }
 
     private async readArchiveDatabases(archiveFile: string): Promise<string[]> {
-        const proc = Bun.spawn(
-            [
-                this.mongorestorePath,
-                `--uri=${this.getHostUri()}`,
-                `--archive=${archiveFile}`,
-                '--dryRun',
-                '--verbose',
-            ],
-            {
-                stdout: 'ignore',
-                stderr: 'pipe',
-            },
-        )
-
-        const [exitCode, output] = await Promise.all([
-            proc.exited,
-            new Response(proc.stderr).text(),
+        const { exitCode, stderr: output } = await this.run(() => [
+            this.mongorestorePath,
+            `--uri=${this.getHostUri()}`,
+            `--archive=${archiveFile}`,
+            '--dryRun',
+            '--verbose',
         ])
 
         if (exitCode !== 0) {
@@ -378,22 +374,11 @@ export class MongoDbAdapter implements DatabaseAdapter {
     }
 
     private async dumpDatabase(dbName: string, archiveFile: string): Promise<void> {
-        const proc = Bun.spawn(
-            [
-                this.mongodumpPath,
-                `--uri=${this.getHostUri()}`,
-                `--db=${dbName}`,
-                `--archive=${archiveFile}`,
-            ],
-            {
-                stdout: this.config.verbose ? 'inherit' : 'ignore',
-                stderr: 'pipe',
-            },
-        )
-
-        const [exitCode, errorOutput] = await Promise.all([
-            proc.exited,
-            new Response(proc.stderr).text(),
+        const { exitCode, stderr: errorOutput } = await this.run(() => [
+            this.mongodumpPath,
+            `--uri=${this.getHostUri()}`,
+            `--db=${dbName}`,
+            `--archive=${archiveFile}`,
         ])
 
         if (exitCode !== 0) {
@@ -408,23 +393,12 @@ export class MongoDbAdapter implements DatabaseAdapter {
         fromDb: string,
         toDb: string,
     ): Promise<void> {
-        const proc = Bun.spawn(
-            [
-                this.mongorestorePath,
-                `--uri=${this.getHostUri()}`,
-                `--archive=${archiveFile}`,
-                `--nsFrom=${fromDb}.*`,
-                `--nsTo=${toDb}.*`,
-            ],
-            {
-                stdout: this.config.verbose ? 'inherit' : 'ignore',
-                stderr: 'pipe',
-            },
-        )
-
-        const [exitCode, errorOutput] = await Promise.all([
-            proc.exited,
-            new Response(proc.stderr).text(),
+        const { exitCode, stderr: errorOutput } = await this.run(() => [
+            this.mongorestorePath,
+            `--uri=${this.getHostUri()}`,
+            `--archive=${archiveFile}`,
+            `--nsFrom=${fromDb}.*`,
+            `--nsTo=${toDb}.*`,
         ])
 
         if (exitCode !== 0) {
@@ -456,6 +430,12 @@ export class MongoDbAdapter implements DatabaseAdapter {
 
         MongoDbAdapter.dependenciesChecked = true
     }
+}
+
+export async function detectMongoAuthSource(config: DbConfig): Promise<string | undefined> {
+    return resolveMongoAuthSource(config, (candidate) =>
+        new MongoDbAdapter({ ...config, authSource: candidate }).testConnection(),
+    )
 }
 
 function formatBytes(bytes: number): string {

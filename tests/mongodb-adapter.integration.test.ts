@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it, jest } from 'bun:test'
 import { existsSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -6,6 +6,8 @@ import { join } from 'path'
 import { MongoDbAdapter } from '@/adapters/mongodb-adapter'
 import type { DbConfig } from '@/interfaces'
 import { DbType } from '@/interfaces'
+
+jest.setTimeout(30000)
 
 const TEST_DB_PREFIX = 'db_cli_mongo_test_'
 const testDbName = `${TEST_DB_PREFIX}${Date.now()}`

@@ -2,6 +2,7 @@ import { confirm, isCancel, password, select, spinner, text } from '@clack/promp
 import { randomUUID } from 'crypto'
 
 import { AdapterFactory } from '@/adapters/adapter-factory'
+import { detectMongoAuthSource } from '@/adapters/mongodb-adapter'
 import { showConnectionActionMenu } from '@/cli/menus/connection-actions'
 import { selectWithSearch } from '@/cli/prompts'
 import { ConnectionMenuAction } from '@/cli/types'
@@ -402,6 +403,7 @@ async function addMongoConnectionFromUri(
         verbose: false,
         group: group || undefined,
         uri: uri as string,
+        authSource: initialValues?.authSource,
     }
 
     await testAndSaveConfig(config, () => addMongoConnectionFromUri(name, config))
@@ -441,6 +443,17 @@ async function addMongoConnectionFromFields(
     const pw = await password({ message: 'Password' })
     if (isCancel(pw)) return
 
+    let authSource = initialValues?.authSource
+    if (user) {
+        const authSourceResponse = await text({
+            message: 'Auth Source (leave empty to detect automatically)',
+            placeholder: 'admin',
+            initialValue: initialValues?.authSource,
+        })
+        if (isCancel(authSourceResponse)) return
+        authSource = (authSourceResponse as string) || undefined
+    }
+
     const ssl = await confirm({
         message: 'Use TLS/SSL?',
         initialValue: initialValues?.ssl ?? false,
@@ -462,19 +475,39 @@ async function addMongoConnectionFromFields(
         ssl: ssl as boolean,
         verbose: false,
         group: group || undefined,
+        authSource,
     }
 
     await testAndSaveConfig(config, () => addMongoConnectionFromFields(name, config))
 }
 
+async function withDetectedAuthSource(
+    config: DbConfig,
+    s: ReturnType<typeof spinner>,
+): Promise<DbConfig> {
+    if (config.type !== DbType.MongoDB) return config
+
+    s.message('Detecting authentication database...')
+    const authSource = await detectMongoAuthSource(config)
+    return authSource ? { ...config, authSource } : config
+}
+
 async function testAndSaveConfig(config: DbConfig, retryFn: () => Promise<void>): Promise<void> {
     const s = spinner()
     s.start('Testing connection...')
-    const adapter = AdapterFactory.createAdapter(config)
+
+    const resolved = await withDetectedAuthSource(config, s)
+    s.message('Testing connection...')
+
+    const adapter = AdapterFactory.createAdapter(resolved)
 
     if (await adapter.testConnection()) {
-        s.stop('Connection verified!')
-        await configManager.addConfig(config)
+        s.stop(
+            resolved.authSource
+                ? `Connection verified (auth source: '${resolved.authSource}')!`
+                : 'Connection verified!',
+        )
+        await configManager.addConfig(resolved)
         logSuccess('Connection added successfully!')
     } else {
         s.error('Connection failed.')
@@ -497,7 +530,7 @@ async function testAndSaveConfig(config: DbConfig, retryFn: () => Promise<void>)
         if (isCancel(save)) return
 
         if (save) {
-            await configManager.addConfig(config)
+            await configManager.addConfig(resolved)
             logSuccess('Connection added (unverified).')
         }
     }
