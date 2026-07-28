@@ -7,6 +7,7 @@ import { assertValidDbName, logInfo } from '@/helpers/utils'
 import type { DatabaseAdapter, DatabaseInfo, DbConfig, ImportOptions } from '@/interfaces'
 
 const CONNECTION_TIMEOUT_MS = 10000
+const PLACEHOLDER_COLLECTION = '_init'
 
 export class MongoDbAdapter implements DatabaseAdapter {
     private static dependenciesChecked = false
@@ -172,7 +173,7 @@ export class MongoDbAdapter implements DatabaseAdapter {
                 this.getUri(dbName),
                 '--quiet',
                 '--eval',
-                'db.createCollection("_init")',
+                `db.createCollection("${PLACEHOLDER_COLLECTION}")`,
             ],
             {
                 stdout: this.config.verbose ? 'inherit' : 'ignore',
@@ -252,14 +253,32 @@ export class MongoDbAdapter implements DatabaseAdapter {
     }
 
     async import(inputFile: string, options?: ImportOptions): Promise<void> {
-        this.verbose(`Importing '${inputFile}' into '${this.config.database}'...`)
+        const targetDb = this.config.database
+        this.verbose(`Importing '${inputFile}' into '${targetDb}'...`)
 
-        const args = [
-            this.mongorestorePath,
-            `--uri=${this.getHostUri()}`,
-            `--archive=${inputFile}`,
-            `--nsInclude=${this.config.database}.*`,
-        ]
+        const sourceDbs = await this.readArchiveDatabases(inputFile)
+
+        if (sourceDbs.length === 0) {
+            throw new AdapterError(
+                `Could not determine the source database of archive '${inputFile}'`,
+            )
+        }
+
+        if (sourceDbs.length > 1 && !sourceDbs.includes(targetDb)) {
+            throw new AdapterError(
+                `Archive '${inputFile}' contains multiple databases (${sourceDbs.join(', ')}). Import it into one of these names instead of '${targetDb}'.`,
+            )
+        }
+
+        const args = [this.mongorestorePath, `--uri=${this.getHostUri()}`, `--archive=${inputFile}`]
+
+        const sourceDb = sourceDbs[0] as string
+        if (sourceDbs.length === 1 && sourceDb !== targetDb) {
+            this.verbose(`Remapping namespaces '${sourceDb}.*' to '${targetDb}.*'`)
+            args.push(`--nsFrom=${sourceDb}.*`, `--nsTo=${targetDb}.*`)
+        } else {
+            args.push(`--nsInclude=${targetDb}.*`)
+        }
 
         if (options?.reset) {
             args.push('--drop')
@@ -281,7 +300,81 @@ export class MongoDbAdapter implements DatabaseAdapter {
                 `mongorestore failed with exit code ${exitCode}${errorOutput ? `: ${errorOutput.trim()}` : ''}`,
             )
         }
+
+        const failed = parseInt(
+            errorOutput.match(/(\d+) document\(s\) failed to restore/)?.[1] ?? '0',
+            10,
+        )
+        if (failed > 0) {
+            throw new AdapterError(
+                `mongorestore could not restore ${failed} document(s) into '${targetDb}'${errorOutput ? `: ${errorOutput.trim()}` : ''}`,
+            )
+        }
+
+        await this.dropPlaceholderCollection()
         this.verbose('Import completed successfully')
+    }
+
+    private async dropPlaceholderCollection(): Promise<void> {
+        const script = [
+            'const names = db.getCollectionNames()',
+            `if (names.length > 1 && names.includes('${PLACEHOLDER_COLLECTION}') && db.getCollection('${PLACEHOLDER_COLLECTION}').countDocuments() === 0)`,
+            `db.getCollection('${PLACEHOLDER_COLLECTION}').drop()`,
+        ].join('\n')
+
+        const proc = Bun.spawn(
+            [this.mongoshPath, this.getUri(this.config.database), '--quiet', '--eval', script],
+            {
+                stdout: 'ignore',
+                stderr: 'ignore',
+            },
+        )
+
+        const exitCode = await proc.exited
+        if (exitCode !== 0) {
+            this.verbose(
+                `Could not remove '${PLACEHOLDER_COLLECTION}' placeholder (exit code ${exitCode})`,
+            )
+            return
+        }
+        this.verbose(`Removed '${PLACEHOLDER_COLLECTION}' placeholder if it was left empty`)
+    }
+
+    private async readArchiveDatabases(archiveFile: string): Promise<string[]> {
+        const proc = Bun.spawn(
+            [
+                this.mongorestorePath,
+                `--uri=${this.getHostUri()}`,
+                `--archive=${archiveFile}`,
+                '--dryRun',
+                '--verbose',
+            ],
+            {
+                stdout: 'ignore',
+                stderr: 'pipe',
+            },
+        )
+
+        const [exitCode, output] = await Promise.all([
+            proc.exited,
+            new Response(proc.stderr).text(),
+        ])
+
+        if (exitCode !== 0) {
+            throw new AdapterError(
+                `Failed to read archive '${archiveFile}'${output ? `: ${output.trim()}` : ''}`,
+            )
+        }
+
+        const names = new Set<string>()
+        for (const [, dbName] of output.matchAll(/archive prelude `([^`.]+)\./g)) {
+            names.add(dbName as string)
+        }
+        for (const [, dbName] of output.matchAll(/found collection `([^`.]+)\./g)) {
+            names.add(dbName as string)
+        }
+
+        return [...names]
     }
 
     private async dumpDatabase(dbName: string, archiveFile: string): Promise<void> {

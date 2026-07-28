@@ -13,6 +13,8 @@ const seedDbName = `${TEST_DB_PREFIX}seed_${Date.now()}`
 const cloneDbName = `${testDbName}_clone`
 const renameDbName = `${testDbName}_renamed`
 const importDbName = `${testDbName}_import`
+const dataDbName = `${TEST_DB_PREFIX}data_${Date.now()}`
+const renamedTargetDbName = `${dataDbName}_target`
 
 const testConfig: DbConfig = {
     id: 'test-mongo-connection',
@@ -26,6 +28,35 @@ const testConfig: DbConfig = {
     ssl: false,
     verbose: false,
     uri: process.env.MONGO_URI,
+}
+
+function buildUri(dbName: string): string {
+    if (testConfig.uri) {
+        const url = new URL(testConfig.uri)
+        url.pathname = `/${dbName}`
+        return url.toString()
+    }
+    return `mongodb://${testConfig.host}:${testConfig.port}/${dbName}`
+}
+
+async function mongoEval(dbName: string, script: string): Promise<string> {
+    const proc = Bun.spawn(['mongosh', buildUri(dbName), '--quiet', '--eval', script], {
+        stdout: 'pipe',
+        stderr: 'ignore',
+    })
+    const output = await new Response(proc.stdout).text()
+    await proc.exited
+    return output.trim()
+}
+
+async function countDocuments(dbName: string, collection: string): Promise<number> {
+    const output = await mongoEval(dbName, `db.${collection}.countDocuments()`)
+    return parseInt(output, 10)
+}
+
+async function listCollections(dbName: string): Promise<string[]> {
+    const output = await mongoEval(dbName, 'JSON.stringify(db.getCollectionNames())')
+    return JSON.parse(output)
 }
 
 describe('MongoDbAdapter Integration Tests', () => {
@@ -158,6 +189,100 @@ describe('MongoDbAdapter Integration Tests', () => {
         it('should import with reset option', async () => {
             const importAdapter = new MongoDbAdapter({ ...testConfig, database: importDbName })
             await importAdapter.import(exportFile, { reset: true })
+        })
+    })
+
+    describe('import into a differently named database', () => {
+        const dataExportFile = join(tmpdir(), `db_cli_mongo_data_export_${Date.now()}.archive`)
+
+        beforeAll(async () => {
+            await mongoEval(dataDbName, 'db.users.insertMany([{ n: 1 }, { n: 2 }, { n: 3 }])')
+            createdDatabases.push(dataDbName)
+
+            const exportAdapter = new MongoDbAdapter({ ...testConfig, database: dataDbName })
+            await exportAdapter.export(dataExportFile)
+        })
+
+        afterAll(() => {
+            if (existsSync(dataExportFile)) unlinkSync(dataExportFile)
+        })
+
+        it('should restore documents when target name differs from the dumped name', async () => {
+            createdDatabases.push(renamedTargetDbName)
+
+            const importAdapter = new MongoDbAdapter({
+                ...testConfig,
+                database: renamedTargetDbName,
+            })
+            await importAdapter.import(dataExportFile)
+
+            expect(await countDocuments(renamedTargetDbName, 'users')).toBe(3)
+        })
+
+        it('should leave the source database untouched', async () => {
+            expect(await countDocuments(dataDbName, 'users')).toBe(3)
+        })
+
+        it('should restore into the renamed target with reset option', async () => {
+            await mongoEval(renamedTargetDbName, 'db.users.insertOne({ stale: true })')
+
+            const importAdapter = new MongoDbAdapter({
+                ...testConfig,
+                database: renamedTargetDbName,
+            })
+            await importAdapter.import(dataExportFile, { reset: true })
+
+            expect(await countDocuments(renamedTargetDbName, 'users')).toBe(3)
+        })
+
+        it('should throw when documents fail to restore', async () => {
+            const importAdapter = new MongoDbAdapter({
+                ...testConfig,
+                database: renamedTargetDbName,
+            })
+            await expect(importAdapter.import(dataExportFile)).rejects.toThrow()
+        })
+
+        it('should remove the empty _init placeholder after a populated import', async () => {
+            const placeholderDbName = `${dataDbName}_placeholder`
+            await adapter.createDatabase(placeholderDbName)
+            createdDatabases.push(placeholderDbName)
+
+            expect(await listCollections(placeholderDbName)).toContain('_init')
+
+            const importAdapter = new MongoDbAdapter({
+                ...testConfig,
+                database: placeholderDbName,
+            })
+            await importAdapter.import(dataExportFile)
+
+            const collections = await listCollections(placeholderDbName)
+            expect(collections).toContain('users')
+            expect(collections).not.toContain('_init')
+            expect(await countDocuments(placeholderDbName, 'users')).toBe(3)
+        })
+
+        it('should keep _init when it is the only collection left', async () => {
+            const emptyExportFile = join(tmpdir(), `db_cli_mongo_empty_${Date.now()}.archive`)
+            const emptyTargetDbName = `${dataDbName}_empty_target`
+
+            const exportAdapter = new MongoDbAdapter({ ...testConfig, database: seedDbName })
+            await exportAdapter.export(emptyExportFile)
+
+            await adapter.createDatabase(emptyTargetDbName)
+            createdDatabases.push(emptyTargetDbName)
+
+            const importAdapter = new MongoDbAdapter({
+                ...testConfig,
+                database: emptyTargetDbName,
+            })
+            await importAdapter.import(emptyExportFile)
+
+            expect(await listCollections(emptyTargetDbName)).toEqual(['_init'])
+            const databases = await adapter.listDatabases()
+            expect(databases.some((db) => db.name === emptyTargetDbName)).toBe(true)
+
+            if (existsSync(emptyExportFile)) unlinkSync(emptyExportFile)
         })
     })
 
