@@ -133,6 +133,14 @@ export class ConfigManager {
         }
     }
 
+    public setAuthSource(id: string, authSource: string): void {
+        const config = this.configs.find((c) => c.id === id)
+        if (!config || config.authSource === authSource) return
+
+        config.authSource = authSource
+        this.saveConfigRaw()
+    }
+
     public exportToFile(
         filePath: string,
         encryptionPassword?: string,

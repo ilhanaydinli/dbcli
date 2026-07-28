@@ -139,6 +139,14 @@ Drops secondary `CREATE INDEX` statements during import while preserving `PRIMAR
 | MariaDB       | ✅ Supported | ✅     | ✅     | ✅     |
 | MS SQL Server | ✅ Supported | ✅     | ✅     | ✅     |
 
+### MongoDB notes
+
+- Authentication database (`authSource`): MongoDB's own tools authenticate against the database they operate on, not against `admin`. A user created in `admin` therefore fails when exporting some other database, while a user created inside a single database fails when listing databases.
+- dbcli detects the correct `authSource` when a connection is added or edited, and stores it on the connection so every later operation uses the same one. Detection tries `admin` first, then the connection's default database.
+- Operations also recover on their own: if an export, import, or database listing fails to authenticate, dbcli detects the working `authSource`, retries once, and saves it to the connection — so already-saved connections repair themselves on first use.
+- Leave the **Auth Source** prompt empty to detect it automatically, or enter a value to pin it.
+- An `authSource` already present in a connection URI is respected and never overwritten.
+
 ### SQL Server notes
 
 - Authentication: SQL Server Authentication only (Windows Auth not yet supported).

@@ -23,6 +23,7 @@ export const DbConfigSchema = z.object({
     verbose: z.boolean().default(false),
     group: z.string().optional(),
     uri: z.string().optional(),
+    authSource: z.string().optional(),
 })
 
 export type DbConfig = z.infer<typeof DbConfigSchema>
@@ -40,6 +41,10 @@ export const ConfigFileSchema = z.object({
     connections: z.array(DbConfigSchema),
     preferences: PreferencesSchema.default({}),
 })
+
+export interface AdapterHooks {
+    onAuthSourceResolved?: (authSource: string) => void | Promise<void>
+}
 
 export interface ImportOptions {
     reset?: boolean
