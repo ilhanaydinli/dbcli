@@ -13,6 +13,43 @@ const testDbName = `${TEST_DB_PREFIX}${Date.now()}`
 const cloneDbName = `${testDbName}_clone`
 const renameDbName = `${testDbName}_renamed`
 const importDbName = `${testDbName}_import`
+const schemaSourceDbName = `${testDbName}_schema_src`
+const schemaTargetDbName = `${testDbName}_schema_dst`
+
+async function runSql(dbName: string, sql: string): Promise<string> {
+    const proc = Bun.spawn(
+        [
+            'psql',
+            '-h',
+            process.env.POSTGRES_HOST!,
+            '-p',
+            process.env.POSTGRES_PORT!,
+            '-U',
+            process.env.POSTGRES_USER!,
+            '-d',
+            dbName,
+            '-qtA',
+            '-c',
+            sql,
+        ],
+        {
+            env: { ...process.env, PGPASSWORD: process.env.POSTGRES_PASSWORD! },
+            stdout: 'pipe',
+            stderr: 'ignore',
+        },
+    )
+    const output = await new Response(proc.stdout).text()
+    await proc.exited
+    return output.trim()
+}
+
+async function listSchemas(dbName: string): Promise<string[]> {
+    const output = await runSql(
+        dbName,
+        "select nspname from pg_namespace where nspname not like 'pg\\_%' and nspname <> 'information_schema' order by 1",
+    )
+    return output ? output.split('\n') : []
+}
 
 const testConfig: DbConfig = {
     id: 'test-connection',
@@ -145,6 +182,61 @@ describe('PostgresAdapter Integration Tests', () => {
         it('should import with reset option', async () => {
             const importAdapter = new PostgresAdapter({ ...testConfig, database: importDbName })
             await importAdapter.import(exportFile, { reset: true })
+        })
+    })
+
+    describe('import into a database holding non-public schemas', () => {
+        const schemaExportFile = join(tmpdir(), `db_cli_schema_export_${Date.now()}.sql`)
+
+        beforeAll(async () => {
+            await adapter.createDatabase(schemaSourceDbName)
+            createdDatabases.push(schemaSourceDbName)
+            await runSql(
+                schemaSourceDbName,
+                "CREATE SCHEMA drizzle; CREATE TABLE drizzle.migrations(hash text); INSERT INTO drizzle.migrations VALUES ('from-dump'); CREATE TABLE public.users(name text); INSERT INTO public.users VALUES ('ali')",
+            )
+
+            const exportAdapter = new PostgresAdapter({
+                ...testConfig,
+                database: schemaSourceDbName,
+            })
+            await exportAdapter.export(schemaExportFile)
+
+            await adapter.createDatabase(schemaTargetDbName)
+            createdDatabases.push(schemaTargetDbName)
+            await runSql(
+                schemaTargetDbName,
+                "CREATE SCHEMA drizzle; CREATE TABLE drizzle.migrations(hash text); INSERT INTO drizzle.migrations VALUES ('stale')",
+            )
+        })
+
+        afterAll(() => {
+            if (existsSync(schemaExportFile)) unlinkSync(schemaExportFile)
+        })
+
+        it('should drop non-public schemas when resetting', async () => {
+            expect(await listSchemas(schemaTargetDbName)).toContain('drizzle')
+
+            const importAdapter = new PostgresAdapter({
+                ...testConfig,
+                database: schemaTargetDbName,
+            })
+            await importAdapter.import(schemaExportFile, { reset: true })
+
+            expect(await listSchemas(schemaTargetDbName)).toEqual(['drizzle', 'public'])
+            expect(await runSql(schemaTargetDbName, 'select hash from drizzle.migrations')).toBe(
+                'from-dump',
+            )
+            expect(await runSql(schemaTargetDbName, 'select name from public.users')).toBe('ali')
+        })
+
+        it('should point at the reset option when importing without it fails', async () => {
+            const importAdapter = new PostgresAdapter({
+                ...testConfig,
+                database: schemaTargetDbName,
+            })
+
+            await expect(importAdapter.import(schemaExportFile)).rejects.toThrow(/reset/i)
         })
     })
 
