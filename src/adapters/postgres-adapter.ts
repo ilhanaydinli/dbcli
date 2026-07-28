@@ -8,6 +8,29 @@ import type { DatabaseAdapter, DatabaseInfo, DbConfig } from '@/interfaces'
 
 const CONNECTION_TIMEOUT_MS = 10000
 
+const RESET_SCHEMAS_SQL = `
+DO $$
+DECLARE target text;
+BEGIN
+    FOR target IN
+        SELECT nspname FROM pg_namespace
+        WHERE nspname NOT LIKE 'pg\\_%' AND nspname <> 'information_schema'
+    LOOP
+        EXECUTE format('DROP SCHEMA IF EXISTS %I CASCADE', target);
+    END LOOP;
+END $$;
+CREATE SCHEMA IF NOT EXISTS public;
+GRANT ALL ON SCHEMA public TO public;
+`
+
+function psqlFailureMessage(exitCode: number, errorOutput: string): string {
+    const details = errorOutput ? `: ${errorOutput}` : ''
+    const hint = /already exists/i.test(errorOutput)
+        ? '\n\nThe target database already contains some of these objects. Re-run the import and choose to reset the database first.'
+        : ''
+    return `psql failed with exit code ${exitCode}${details}${hint}`
+}
+
 function shQuote(s: string): string {
     if (s.length === 0) return "''"
     if (/^[a-zA-Z0-9_.\-/=]+$/.test(s)) return s
@@ -401,7 +424,7 @@ export class PostgresAdapter implements DatabaseAdapter {
         this.verbose(`Importing '${inputFile}' to '${this.config.database}'...`)
 
         if (options?.reset) {
-            this.verbose('Resetting database (dropping public schema)...')
+            this.verbose('Resetting database (dropping all schemas)...')
             const resetProc = Bun.spawn(
                 [
                     this.psqlPath,
@@ -409,7 +432,7 @@ export class PostgresAdapter implements DatabaseAdapter {
                     '-d',
                     this.config.database,
                     '-c',
-                    'DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO public;',
+                    RESET_SCHEMAS_SQL,
                 ],
                 {
                     env: this.getEnv(),
@@ -701,9 +724,7 @@ export class PostgresAdapter implements DatabaseAdapter {
         const exitCode = await psqlProc.exited
         if (exitCode !== 0) {
             const errorOutput = await new Response(psqlProc.stderr).text()
-            throw new AdapterError(
-                `psql failed with exit code ${exitCode}${errorOutput ? `: ${errorOutput.trim()}` : ''}`,
-            )
+            throw new AdapterError(psqlFailureMessage(exitCode, errorOutput.trim()))
         }
         this.verbose('Import completed successfully')
     }
@@ -763,9 +784,7 @@ export class PostgresAdapter implements DatabaseAdapter {
                 .filter((line) => !line.includes('Broken pipe'))
                 .join('\n')
                 .trim()
-            throw new AdapterError(
-                `psql failed with exit code ${exitCode}${cleaned ? `: ${cleaned}` : ''}`,
-            )
+            throw new AdapterError(psqlFailureMessage(exitCode, cleaned))
         }
 
         logInfo('[PostgreSQL] Fast Import Mode pipeline completed.')
