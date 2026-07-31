@@ -142,9 +142,9 @@ async function snapshotData(dbName: string): Promise<RowSnapshot> {
             .query<{ actor: string }>('SELECT actor FROM app.audit_log ORDER BY id;')
         const wideResult = await pool
             .request()
-            .query<
-                Record<string, unknown>
-            >('SELECT bit_col, bigint_col, decimal_col, money_col, date_col, datetime2_col, varbinary_col, guid_col, nullable_col FROM wide_types ORDER BY id;')
+            .query<Record<string, unknown>>(
+                'SELECT bit_col, bigint_col, decimal_col, money_col, date_col, datetime2_col, varbinary_col, guid_col, nullable_col FROM wide_types ORDER BY id;',
+            )
         return {
             users: usersResult.recordset,
             posts: postsResult.recordset,
