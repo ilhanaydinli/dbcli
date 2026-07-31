@@ -68,13 +68,13 @@ function ensureConnectionsExist(): DbConfig[] {
     return configs
 }
 
-export async function selectConfig(): Promise<DbConfig> {
+export async function pickConfig(): Promise<{ config: DbConfig; prompted: boolean } | null> {
     const configs = ensureConnectionsExist()
 
     if (configs.length === 1) {
-        const config = configs[0]
+        const config = configs[0] as DbConfig
         logInfo(`Using default connection: ${formatConnectionLabel(config)}`)
-        return config
+        return { config, prompted: false }
     }
 
     const id = await selectWithSearch<string>({
@@ -86,16 +86,14 @@ export async function selectConfig(): Promise<DbConfig> {
         })),
     })
 
-    if (isCancel(id)) {
-        throw new ConfigError('Operation cancelled.')
-    }
+    if (isCancel(id)) return null
 
     const config = configManager.getConfig(id as string)
     if (!config) {
         throw new ConfigError('Selected connection no longer exists.')
     }
 
-    return config
+    return { config, prompted: true }
 }
 
 export async function fetchDatabaseList(adapter: DatabaseAdapter): Promise<DatabaseInfo[]> {

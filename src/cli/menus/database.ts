@@ -2,14 +2,17 @@ import { isCancel, text } from '@clack/prompts'
 
 import { AdapterFactory } from '@/adapters/adapter-factory'
 import { showDatabaseActionMenu } from '@/cli/menus/database-actions'
-import { fetchDatabaseList, selectConfig, selectLocale, selectWithSearch } from '@/cli/prompts'
+import { fetchDatabaseList, pickConfig, selectLocale, selectWithSearch } from '@/cli/prompts'
 import { DatabaseAction } from '@/cli/types'
 import { logSuccess, withSpinner } from '@/helpers/utils'
 import type { DatabaseAdapter } from '@/interfaces'
 import { DbNameSchema, zodValidate } from '@/validations'
 
 export async function showDatabaseMenu(): Promise<void> {
-    const config = await selectConfig()
+    const picked = await pickConfig()
+    if (!picked) return
+
+    const config = picked.config
     const adapter = AdapterFactory.createAdapter(config)
 
     while (true) {

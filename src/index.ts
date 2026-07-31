@@ -8,7 +8,12 @@ import { logError, logInfo } from '@/helpers/utils'
 import pkg from '../package.json'
 
 const cachedPending = readPendingUpdate(pkg.version)
-const updatePromise = checkForUpdate(pkg.version)
+const updateAbort = new AbortController()
+
+let liveUpdate: string | null = null
+void checkForUpdate(pkg.version, undefined, updateAbort.signal).then((version) => {
+    liveUpdate = version
+})
 
 function setupGracefulShutdown(): void {
     const shutdown = (signal: string) => {
@@ -35,11 +40,8 @@ async function main(): Promise<void> {
 }
 
 main()
-    .then(async () => {
-        const liveUpdate = await Promise.race([
-            updatePromise,
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
-        ])
+    .then(() => {
+        updateAbort.abort()
         if (liveUpdate && liveUpdate !== cachedPending) {
             showUpdateNote(liveUpdate)
         }

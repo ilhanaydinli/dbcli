@@ -11,20 +11,26 @@ const configManager = ConfigManager.getInstance()
 type ActionHandler = (config: DbConfig) => Promise<void>
 
 export async function showConnectionActionMenu(config: DbConfig): Promise<void> {
-    const action = await select({
-        message: `Action for connection: ${formatConnectionLabel(config)}`,
-        options: [
-            { label: 'Edit Connection', value: ConnectionItemAction.Edit },
-            { label: 'Update Password', value: ConnectionItemAction.UpdatePassword },
-            { label: 'Remove Connection', value: ConnectionItemAction.Remove },
-            { label: 'Back', value: ConnectionItemAction.Back },
-        ],
-    })
+    let current: DbConfig | undefined = config
 
-    if (isCancel(action) || action === ConnectionItemAction.Back) return
+    while (current) {
+        const action = await select({
+            message: `Action for connection: ${formatConnectionLabel(current)}`,
+            options: [
+                { label: 'Edit Connection', value: ConnectionItemAction.Edit },
+                { label: 'Update Password', value: ConnectionItemAction.UpdatePassword },
+                { label: 'Remove Connection', value: ConnectionItemAction.Remove },
+                { label: '← Back', value: ConnectionItemAction.Back },
+            ],
+        })
 
-    const handler = actions[action as ConnectionItemAction]
-    if (handler) await handler(config)
+        if (isCancel(action) || action === ConnectionItemAction.Back) return
+
+        const handler = actions[action as ConnectionItemAction]
+        if (handler) await handler(current)
+
+        current = configManager.getConfig(config.id)
+    }
 }
 
 const actions: Partial<Record<ConnectionItemAction, ActionHandler>> = {

@@ -49,10 +49,12 @@ export function readPendingUpdate(
 export async function checkForUpdate(
     currentVersion: string,
     path: string = CACHE_PATH,
+    signal?: AbortSignal,
 ): Promise<string | null> {
     try {
+        const timeout = AbortSignal.timeout(5000)
         const response = await fetch('https://registry.npmjs.org/@ilhanaydinli/dbcli/latest', {
-            signal: AbortSignal.timeout(5000),
+            signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
         })
         const data = (await response.json()) as { version: string }
         writeCache({ latestVersion: data.version }, path)

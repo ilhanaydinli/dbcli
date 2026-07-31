@@ -86,6 +86,31 @@ describe('checkForUpdate', () => {
     })
 })
 
+describe('checkForUpdate cancellation', () => {
+    it('returns null when the caller aborts before the request settles', async () => {
+        globalThis.fetch = ((_url: string, init?: RequestInit) =>
+            new Promise((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () =>
+                    reject(new Error('The operation was aborted')),
+                )
+            })) as unknown as typeof fetch
+
+        const controller = new AbortController()
+        const pending = checkForUpdate('1.8.0', cachePath, controller.signal)
+        controller.abort()
+
+        expect(await pending).toBeNull()
+        expect(existsSync(cachePath)).toBe(false)
+    })
+
+    it('still resolves normally when an unaborted signal is passed', async () => {
+        mockFetch('1.9.0')
+        const controller = new AbortController()
+
+        expect(await checkForUpdate('1.8.0', cachePath, controller.signal)).toBe('1.9.0')
+    })
+})
+
 describe('readPendingUpdate', () => {
     it('returns null when cache file does not exist', () => {
         const result = readPendingUpdate('1.8.0', cachePath)
