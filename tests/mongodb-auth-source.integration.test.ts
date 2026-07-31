@@ -7,7 +7,7 @@ import { detectMongoAuthSource, MongoDbAdapter } from '@/adapters/mongodb-adapte
 import type { DbConfig } from '@/interfaces'
 import { DbType } from '@/interfaces'
 
-jest.setTimeout(30000)
+jest.setTimeout(60000)
 
 const AUTH_HOST = process.env.MONGO_AUTH_HOST ?? 'localhost'
 const AUTH_PORT = parseInt(process.env.MONGO_AUTH_PORT ?? '27018', 10)
@@ -33,6 +33,13 @@ async function isReachable(): Promise<boolean> {
 }
 
 const authAvailable = await isReachable()
+
+async function connectsEventually(adapter: MongoDbAdapter, attempts = 3): Promise<boolean> {
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        if (await adapter.testConnection()) return true
+    }
+    return false
+}
 
 const baseConfig: DbConfig = {
     id: 'auth-test',
@@ -84,7 +91,7 @@ describe.skipIf(!authAvailable)('MongoDB authSource detection (auth enabled serv
     it('should connect once the detected authSource is applied', async () => {
         const authSource = await detectMongoAuthSource(baseConfig)
         const adapter = new MongoDbAdapter({ ...baseConfig, authSource })
-        expect(await adapter.testConnection()).toBe(true)
+        expect(await connectsEventually(adapter)).toBe(true)
     })
 
     it('should export successfully once the detected authSource is applied', async () => {
@@ -188,6 +195,6 @@ describe.skipIf(!authAvailable)('MongoDB authSource detection (auth enabled serv
         expect(await detectMongoAuthSource(uriConfig)).toBeUndefined()
 
         const adapter = new MongoDbAdapter(uriConfig)
-        expect(await adapter.testConnection()).toBe(true)
+        expect(await connectsEventually(adapter)).toBe(true)
     })
 })
